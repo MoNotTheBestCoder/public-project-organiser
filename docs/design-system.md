@@ -53,11 +53,15 @@ Preserve light and dark theme variants. Glass must retain a readable base tint a
 Each of these is named because this codebase drifted into it and had to be pulled back out.
 They are not general design theory; they are the specific mistakes this file has already made.
 
-- **No decorative shadow, gradient or blur on an ordinary button.** Add, Edit and Delete each
-  grew their own `box-shadow` + `linear-gradient` + `backdrop-filter` treatment with slightly
-  different parameters, so three controls sitting on the same row looked unrelated. A button
-  carries a tint (create), neutral chrome (secondary), or the danger palette (delete), and
-  nothing else. Restrained glass belongs to overlays and floating surfaces, not to list rows.
+- **One glass recipe, not one per control.** Add, Edit and Delete each grew their own
+  `box-shadow` + `linear-gradient` + `backdrop-filter` with different numbers, so three
+  controls on the same row looked unrelated. The fault was the divergence, not the glass:
+  removing it entirely was an overcorrection. Glass now comes from shared theme tokens
+  (`--glass-sheen`, `--glass-edge`, `--glass-drop`, each set per theme) applied in a single
+  rule to the controls that carry it — create actions, primary actions, and delete. Colour
+  still says what a control does; the glass is identical on all of them. Secondary controls
+  (Edit, Move, Speak, Paste drafts, exports) stay neutral with no glass at all. Never give
+  one button its own gradient, shadow or blur values.
 - **No radius override without a size reason.** A control that overrides `--r-sm` to 10px or
   11px only breaks the corner rhythm of the row it sits in. Change the radius when the control
   changes size, not to make it look distinct.

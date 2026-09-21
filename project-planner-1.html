@@ -40,6 +40,10 @@
     --h6: var(--ink-2); --h6-bg: var(--panel-2); --h6-line: var(--line);
     --focus: var(--brand); --r-lg: 16px; --r-md: 12px; --r-sm: 9px;
     --lift: 0 1px 2px #0000000a, 0 4px 16px #00000008;
+    /* One glass recipe, shared by every control that uses it. */
+    --glass-sheen: .28;   /* top-left highlight in the gradient */
+    --glass-edge: .30;    /* the 1px lit edge along the top */
+    --glass-drop: .045;   /* how far it lifts off the surface */
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -47,6 +51,9 @@
     --prog: #7da7da; --wait: #e2b85b; --done: #9ccb6a; --danger: #ff7b72;
     --brand-ink: #161615; --wait-ink: var(--wait);
     --lift: 0 1px 2px #00000040, 0 4px 16px #00000030;
+    --glass-sheen: .07;   /* a lit edge that reads on dark stays much fainter */
+    --glass-edge: .10;
+    --glass-drop: .28;
   }
 </style>
 <style>
@@ -779,15 +786,30 @@
   @media(pointer:coarse) { .picker-close,.picker-browse,.picker-back { min-width:44px; min-height:44px; } }
 </style>
 <style>
-  /* Creating controls: a faint dusty blue tint and nothing else. They inherit
-     the base button's radius so every control on a row matches. */
-  [data-act="add-task"], [data-act="add-project"], [data-act="add-client"], [data-act="focus-add"] { background:var(--brand-soft); border-color:var(--brand-line); }
-  [data-act="add-task"]:hover:not(:disabled), [data-act="add-project"]:hover:not(:disabled), [data-act="add-client"]:hover:not(:disabled), [data-act="focus-add"]:hover:not(:disabled) { background:var(--brand-soft); border-color:var(--brand); }
+  /* Glass, applied from one recipe rather than reinvented per control. The
+     original fault was three families each carrying their own gradient,
+     shadow and blur with different numbers, so buttons sitting on the same
+     row looked unrelated. The colour still says what a control does; the
+     glass is the same on all of them. The tint and border carry the meaning
+     on their own, so a browser without backdrop-filter loses nothing. */
+  [data-act="add-task"], [data-act="add-project"], [data-act="add-client"], [data-act="focus-add"],
+  button.primary, button[data-act="delete"], button[data-act="bulk-delete"] {
+    background-image: linear-gradient(135deg, rgba(255,255,255,var(--glass-sheen)), rgba(255,255,255,0) 62%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,var(--glass-edge)), 0 2px 8px rgba(0,0,0,var(--glass-drop));
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  [data-act="add-task"]:hover:not(:disabled), [data-act="add-project"]:hover:not(:disabled), [data-act="add-client"]:hover:not(:disabled), [data-act="focus-add"]:hover:not(:disabled),
+  button.primary:hover:not(:disabled), button[data-act="delete"]:hover:not(:disabled), button[data-act="bulk-delete"]:hover:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,var(--glass-edge)), 0 3px 12px rgba(0,0,0,calc(var(--glass-drop) * 1.6));
+  }
+
+  /* Creating controls: a faint dusty blue tint under the shared glass. */
+  [data-act="add-task"], [data-act="add-project"], [data-act="add-client"], [data-act="focus-add"] { background-color:var(--brand-soft); border-color:var(--brand-line); }
+  [data-act="add-task"]:hover:not(:disabled), [data-act="add-project"]:hover:not(:disabled), [data-act="add-client"]:hover:not(:disabled), [data-act="focus-add"]:hover:not(:disabled) { background-color:var(--brand-soft); border-color:var(--brand); }
   .rail .cta { color:var(--ink); }
-  /* Delete keeps the palette's red; the glass treatment it used to carry was
-     decoration, not meaning. */
-  button[data-act="delete"],button[data-act="bulk-delete"] { color:var(--danger); background:var(--danger-bg); border-color:var(--danger-line); }
-  button[data-act="delete"]:hover:not(:disabled),button[data-act="bulk-delete"]:hover:not(:disabled) { color:var(--danger); background:var(--danger-bg); border-color:var(--danger); }
+  /* Delete keeps the palette's red; the glass on top is the shared one. */
+  button[data-act="delete"],button[data-act="bulk-delete"] { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger-line); }
+  button[data-act="delete"]:hover:not(:disabled),button[data-act="bulk-delete"]:hover:not(:disabled) { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger); }
   .focus-log-exports { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:4px 0 10px; }
   .focus-log-exports>span { font-size:11px; color:var(--ink-3); margin-right:auto; }
   .focus-log-exports>button { font-size:12px; border-radius:9px; padding:7px 12px; }
