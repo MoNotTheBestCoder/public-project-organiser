@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -512,4 +512,53 @@ test('a step list is capped, and so is a step',()=>{
  assert.equal(a.addStep('t1','one too many'),false);
  a.setState(withSteps([{id:'s1',text:'z'.repeat(900),done:false}]));
  assert.equal(a.state().tasks[0].steps[0].text.length,500);
+});
+
+/* ---- the sidebar client list stays a fixed height however many clients ---- */
+const roster=(n,counts)=>({
+ clients:Array.from({length:n},(_,i)=>({id:'c'+i,name:'Client '+String.fromCharCode(65+i),status:'Active'})),
+ projects:[],
+ tasks:[].concat(...Array.from({length:n},(_,i)=>
+   Array.from({length:counts[i]||0},(_,j)=>({id:'t'+i+'_'+j,clientId:'c'+i,title:'T',status:'To Do',order:(j+1)*1000})))) });
+const navNames=h=>[...h.matchAll(/<span class="nt">([^<]*)<\/span>/g)].map(m=>m[1]);
+
+test('the client list shows every client while there are few enough',()=>{
+ const {a}=app(); a.setState(roster(5,[1,2,3,4,5])); a.renderNav();
+ const names=navNames(a.navHTML());
+ assert.equal(names.length,6);                      // All work plus five clients
+ assert.doesNotMatch(a.navHTML(),/navmore/);        // and no expander
+});
+test('past five it caps, busiest first, with an expander for the rest',()=>{
+ const {a}=app(); a.setState(roster(8,[1,9,2,7,3,8,4,6])); a.renderNav();
+ const names=navNames(a.navHTML());
+ assert.equal(names[0],'All work');
+ // B=9, F=8, D=7, H=6, G=4 are the five busiest
+ eq(names.slice(1),['Client B','Client F','Client D','Client H','Client G']);
+ assert.match(a.navHTML(),/data-act="more" data-key="nav"[^>]*aria-expanded="false"/);
+ assert.match(a.navHTML(),/Show 3 more/);
+ a.setExpanded('nav'); a.renderNav();
+ assert.equal(navNames(a.navHTML()).length,9);      // All work plus all eight
+ assert.match(a.navHTML(),/Show fewer/);
+});
+test('clients with equal counts hold a stable alphabetical order',()=>{
+ const {a}=app(); a.setState(roster(6,[2,2,2,2,2,2])); a.renderNav();
+ eq(navNames(a.navHTML()).slice(1),['Client A','Client B','Client C','Client D','Client E']);
+});
+test('the selected client is never hidden by the cap',()=>{
+ const {a}=app(); a.setState(roster(8,[9,8,7,6,5,4,3,1]));
+ a.setScope('c7');                                  // the quietest, well outside the top five
+ a.renderNav();
+ const names=navNames(a.navHTML());
+ assert.equal(names.length,6);                      // still five clients, not six
+ assert(names.includes('Client H'),'selected client missing from the list');
+ assert.match(a.navHTML(),/class="navitem on" data-act="scope" data-id="c7"/);
+});
+test('archived clients only appear in the list when the filter allows them',()=>{
+ const {a}=app();
+ const f=roster(6,[1,1,1,1,1,1]); f.clients[0].status='Archived';
+ a.setState(f); a.renderNav();
+ assert(!navNames(a.navHTML()).includes('Client A'));
+ assert.doesNotMatch(a.navHTML(),/navmore/);        // five visible, so no expander
+ a.setFilters({hideDone:true,showArchived:true}); a.renderNav();
+ assert.match(a.navHTML(),/Show 1 more/);
 });

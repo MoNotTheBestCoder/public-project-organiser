@@ -84,6 +84,9 @@ Run `node --test planner.test.cjs dragdrop.test.cjs focus-popout.test.cjs standa
 
 ## Quieter navigation
 
+The sidebar lists clients with the most open work first and shows five at a time, with a **+ n more** expander for the rest, so a long client roster does not turn the sidebar into a scroll. Whichever client you have selected stays in the list even if it is one of the quiet ones.
+
+
 The sidebar switches between **Project planner** and **Focus**. New task and client filters remain in the sidebar; New project and New client live on the planner page. The Focus page contains the timer and weekly time log. An active countdown remains visible beside its sidebar button, and switching pages does not stop the session.
 
 Click client or project titles to expand or collapse their contents. Focus and Quick Add can also collapse; the focus header keeps its countdown and start/pause control. Page selection, disclosure, and Show more preferences survive reloads within the same workspace.

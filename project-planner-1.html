@@ -136,6 +136,9 @@
   .navitem:hover { background: var(--rail-2); }
   .navitem.on { background: var(--rail-2); font-weight: 600; }
   .navitem .nt { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Same expander the capped task lists use, sized for the rail. */
+  .navmore { margin: 2px 0 0; padding: 7px 10px; font-size: 13px; color: var(--rail-ink-2, var(--ink-2)); }
+  .navmore:hover:not(:disabled) { background: var(--panel-2); color: var(--ink); border: 0; }
   .navitem .nc {
     flex: none; font-size: 12.5px; font-weight: 600; color: var(--rail-ink-2);
     background: rgba(255,255,255,.08); border-radius: 999px; padding: 1px 8px;
@@ -2153,15 +2156,32 @@
     });
   }
 
+  var NAV_PREVIEW = 5;          // clients listed before the sidebar folds the rest away
+
   function renderNav() {
     var nav = $("clientNav");
     if (!nav) return;
-    var clients = visibleClients();
+    /* Busiest first, so the five a long roster shows are the ones worth
+       showing. Alphabetical within a tie, or the list would reshuffle every
+       time two clients swapped a task. */
+    var clients = visibleClients().slice().sort(function (a, b) {
+      return (openTaskCount(b.id) - openTaskCount(a.id)) || a.name.localeCompare(b.name);
+    });
+
+    var capped = !expanded.nav && clients.length > NAV_PREVIEW;
+    var shown = capped ? clients.slice(0, NAV_PREVIEW) : clients;
+    /* The selected client is always in the list. Picking a quiet client and
+       watching it vanish from the sidebar would be its own bug. */
+    if (capped && scope !== "all" && !shown.some(function (c) { return c.id === scope; })) {
+      var picked = clients.filter(function (c) { return c.id === scope; })[0];
+      if (picked) shown = shown.slice(0, NAV_PREVIEW - 1).concat([picked]);
+    }
+
     var out = '<button class="navitem' + (scope === "all" ? " on" : "") + '" data-act="scope" data-id="all">' +
       '<span class="cdot muted" aria-hidden="true"></span><span class="nt">All work</span>' +
       '<span class="nc">' + state.tasks.filter(function (t) { return t.status !== "Done"; }).length + "</span></button>";
 
-    clients.forEach(function (c) {
+    shown.forEach(function (c) {
       var arch = c.status === "Archived";
       out += '<button data-drop-target="c:'+esc(c.id)+'" class="navitem' + (scope === c.id ? " on" : "") + '" data-act="scope" data-id="' + esc(c.id) + '"' +
         (arch ? "" : hueStyle(c)) + ">" +
@@ -2169,6 +2189,11 @@
         '<span class="nt">' + esc(c.name) + "</span>" +
         '<span class="nc">' + openTaskCount(c.id) + "</span></button>";
     });
+
+    if (clients.length > NAV_PREVIEW) {
+      out += '<button class="more navmore" data-act="more" data-key="nav" aria-expanded="' + (capped ? "false" : "true") + '">' +
+        (capped ? "Show " + (clients.length - shown.length) + " more" : "Show fewer") + "</button>";
+    }
     nav.innerHTML = out;
   }
 
