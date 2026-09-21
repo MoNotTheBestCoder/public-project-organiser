@@ -1,0 +1,17 @@
+# Local credentials and environment settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tools and operating-system files
+.codex/
+.agents/
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Keep exported client data out of source control
+backups/
+exports/

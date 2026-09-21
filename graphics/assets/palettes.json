@@ -1,0 +1,24 @@
+{
+  "light": {
+    "name": "Stone & Dusty Blue",
+    "ground": "#EEECE6",
+    "surface": "#FFFFFF",
+    "ink": "#1D1C1A",
+    "accent": "#4C6385",
+    "inProgress": "#3D6FA3",
+    "waiting": "#A4701B",
+    "done": "#55792F",
+    "overdue": "#B3261E"
+  },
+  "dark": {
+    "name": "Graphite & Dusty Blue",
+    "ground": "#161615",
+    "surface": "#1F1F1D",
+    "ink": "#ECEAE4",
+    "accent": "#9BB4D8",
+    "inProgress": "#7DA7DA",
+    "waiting": "#E2B85B",
+    "done": "#9CCB6A",
+    "overdue": "#FF7B72"
+  }
+}
