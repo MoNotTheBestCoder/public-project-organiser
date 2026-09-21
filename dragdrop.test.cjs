@@ -76,11 +76,14 @@ test('queued remote updates block drag start and drop',()=>{
   assert.equal(a.makePlannerDrag('task','t1'),null);assert.equal(a.applyPlannerDrop(payload,'p:p2'),false);
   assert.equal(a.state().tasks[0].projectId,'p1');
 });
-test('rows drag whole with no handle, keep Move/Edit alternatives, and clients are drop targets only',()=>{
+test('rows drag whole with no handle, keep a pointer-free action route, and clients are drop targets only',()=>{
   const {a,element}=app();
   const tasks=a.renderTasks(a.state().tasks,'test','');
   assert.match(tasks,/<div data-task-id="t1" data-drop-target="t:t1" draggable="true" data-drag-kind="task" data-id="t1"/);
-  assert.match(tasks,/data-act="task-move"/);
+  // Move, Edit and Delete moved off the row into one menu, so the row keeps a
+  // keyboard- and touch-reachable route to them without reserving space.
+  assert.match(tasks,/data-act="task-menu" data-id="t1"/);
+  assert.doesNotMatch(tasks,/data-act="task-move"/);
   assert.doesNotMatch(tasks,/drag-handle/);                      // no per-list handle convention
   const projects=a.renderProjects(a.state().clients[0]);
   assert.match(projects,/<article class="project" data-project-id="p1" data-drop-target="p:p1" draggable="true" data-drag-kind="project" data-id="p1"/);

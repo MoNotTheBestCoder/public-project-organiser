@@ -50,7 +50,11 @@ an icon rail on desktop and becomes a dismissible drawer on phones and tablets.
   Active/On Hold/Done; Task: To Do/In Progress/Waiting/Done
 - Per task: due date (overdue flagged), a waiting-on blocker note, and free general notes
   that reveal on hover/focus, or through a touch control on phones
-- Inline editing of a task's title and due date on the row; everything else via the dialog
+- Inline editing of a task's title and due date on the row; everything else via one
+  overflow menu per row
+- Steps: a task can hold a checklist of `{text, done}` items, entered in a run with
+  Enter and searchable by their text. A step is deliberately not a task — no status,
+  no date, no assignment — so the tree stays three levels deep
 - Manual ordering. Tasks carry a numeric `order`, drag whole-row, and can be dropped onto
   another task row to insert above or below it. Completed tasks fall to the bottom of their
   list, most recently finished first, without a completion-date field
@@ -87,7 +91,8 @@ open the time log and export CSV or Markdown.
 | --- | --- |
 | Client | `id`, `name`, `status` (Active \| Archived), `accent?`, `accent2?`, `brandChecked` |
 | Project | `id`, `clientId` → Client, `name`, `status` (Active \| On Hold \| Done) |
-| Task | `id`, `projectId?` → Project, `clientId?` → Client, `title`, `status` (To Do \| In Progress \| Waiting \| Done), `dueDate?`, `note?` (waiting-on), `notes?` (general), `order` |
+| Task | `id`, `projectId?` → Project, `clientId?` → Client, `title`, `status` (To Do \| In Progress \| Waiting \| Done), `dueDate?`, `note?` (waiting-on), `notes?` (general), `order`, `steps[]` |
+| Step | `id`, `text`, `done` — held inside its task, never a record of its own |
 | Focus settings | `totalMinutes`, `focusMinutes`, `breakMinutes`, `repeat`, `budgetMode` |
 | Focus run | in-flight timer: `id`, `settings`, `status`, `phase`, timings, `assignment`, `note`, `intervals` |
 | Focus session | `id`, `runId`, `assignment`, `note`, `intervals[]`, `startedAt`, `endedAt`, `durationMs`, `outcome` |
@@ -99,8 +104,32 @@ usable `order` is given one on first load, in the order the old status/due-date 
 have shown it, so migrating changes nothing visible.
 
 Stored as one JSON document per viewer — `data/users/<id>/tracker` under the host `db`
-capability, or `localStorage` under `project-planner-v1` standalone. Both use the same
-shape, so a backup from one loads into the other.
+capability, or `localStorage` under `project-planner-v1` standalone. The two are separate
+stores holding the same document shape, and a backup moves records between them:
+`exportBackup()` writes the file, `importBackup()` reads it back. That round trip is what
+makes a planner portable between a standalone file, an artifact, and another browser.
+
+### Format evolution
+
+`SCHEMA_VERSION` records the document shape; `MIGRATIONS` gives each change a home. The
+format is built to outlive the feature set, in both directions:
+
+- **Older file, newer app.** `migrate()` runs any registered step, then `normalize()`
+  supplies defaults for anything absent. Versions 2 and 3 needed no migration entry because
+  their additions (focus records, task `order`) default themselves, and version 4
+  (task `steps`) needs none either. A v1 file with no version field at all still loads.
+- **Newer file, older app.** Fields this build does not recognise are carried through
+  rather than dropped. `normalize()` collects them per record into a non-enumerated `x`
+  carrier and `serialize()` puts them back, so exporting from a build with more features,
+  importing into one with fewer, and exporting again does not destroy the extra fields.
+  Known fields always win over carried ones, so a stale copy cannot shadow a real field,
+  and each carrier is capped at `EXTRA_BUDGET` characters so an oversized or hostile file
+  cannot grow the document without limit. Import warns explicitly before replacing a
+  planner with a file whose version is ahead of this build.
+
+Import validates everything before replacing anything, so a malformed file leaves the
+planner untouched; it names the common mistake of picking a drafts file by hand; and the
+swap routes through `commit()`, so a single Undo reverses an entire import.
 
 ## Technical approach
 
@@ -185,7 +214,7 @@ happened, start a timer when I sit down, and on Friday the timesheet is already 
 
 ## Verification
 
-108 headless checks across six Node test suites (`planner`, `dragdrop`, `focus-popout`,
+128 headless checks across six Node test suites (`planner`, `dragdrop`, `focus-popout`,
 `standalone`, `theme`, `sidebar`), run with:
 
 ```sh
@@ -195,9 +224,9 @@ node --test planner.test.cjs dragdrop.test.cjs focus-popout.test.cjs standalone.
 They cover normalisation and migration, CRUD and cascade deletes that preserve rather than
 destroy child tasks, ordering and drag/drop including stale-drag rejection, search and
 selection, undo/redo, the Quick add review flow (invented IDs blanked, invalid dates
-dropped, atomic rejection of malformed JSON), the AI boundary and its error mapping, focus
-timing and log export, theming, the sidebar, and the standalone path including corrupt
-local data.
+dropped, atomic rejection of malformed JSON), steps and their limits, the AI boundary and
+its error mapping, focus timing and log export, theming, the sidebar, and the standalone
+path including corrupt local data.
 
 What they cannot cover: these suites run in a plain VM with stub elements, so anything
 depending on real layout is out of reach — container queries in particular are not

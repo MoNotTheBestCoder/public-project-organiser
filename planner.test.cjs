@@ -8,10 +8,11 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
- stubUI:()=>{render=()=>{};toast=()=>{};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
- capture:()=>{openConfirm=x=>globalThis.confirm=x;openForm=x=>globalThis.form=x;},
+ lastToast:()=>globalThis.lastToast,
+ stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
+ capture:()=>{openConfirm=x=>globalThis.confirm=x;openForm=x=>globalThis.form=x;openActions=x=>globalThis.sheet=x;},
  applyPendingRemote, AIModel};})();`;
  if(original)code=code.replace(',loadChatDrafts,saveContext,initContext','');
  const els={};const data=new Map();
@@ -82,7 +83,7 @@ test('session budget survives reload, pauses and waiting between blocks without 
 test('pause, resume and early finish record only active intervals',()=>{const {a}=timer(5,5,0);a.focusStart(epoch);a.focusPause(epoch+20000);a.focusStart(epoch+120000);a.focusFinish(epoch+130000);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,30000);assert.equal(a.state().focusSessions[0].intervals.length,2);assert.equal(a.state().focusSessions[0].outcome,'ended-early');a.focusFinish(epoch+140000);assert.equal(a.state().focusSessions.length,1);});
 test('background tab completes one block without inventing subsequent work',()=>{const {a}=timer();a.focusStart(epoch);a.focusTick(epoch+4*60*minute);assert.equal(a.state().focusSessions[0].durationMs,25*minute);assert.equal(a.state().focusRun.status,'ready');a.focusTick(epoch+5*60*minute);assert.equal(a.state().focusSessions.length,1);});
 test('reload resumes timestamp and completion remains idempotent after normalization',()=>{const {a,data}=timer(1,1,0);a.focusStart(epoch);const snapshot=JSON.parse(data.get('project-planner-v1'));a.setState(snapshot);a.focusTick(epoch+2*minute);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,minute);a.setState(JSON.parse(data.get('project-planner-v1')));a.focusTick(epoch+3*minute);assert.equal(a.state().focusSessions.length,1);});
-test('JSON includes settings, active timer, task snapshots and notes',()=>{const {a,data}=timer(90,30,8);a.focusStart(epoch);assert.equal(a.serialize().version,2);a.focusFinish(epoch+45000);const json=JSON.parse(data.get('project-planner-v1'));assert.equal(json.focusSettings.repeat,false);assert.equal(json.focusSettings.totalMinutes,90);assert.equal(json.focusSettings.focusMinutes,30);assert.equal(json.focusSettings.breakMinutes,8);assert.equal(json.focusSessions[0].assignment.clientName,'Alpha');assert.equal(json.focusSessions[0].note,'Drafted client scope');assert.equal(json.focusRun.status,'completed');});
+test('JSON includes settings, active timer, task snapshots and notes',()=>{const {a,data}=timer(90,30,8);a.focusStart(epoch);assert.equal(a.serialize().version,4);a.focusFinish(epoch+45000);const json=JSON.parse(data.get('project-planner-v1'));assert.equal(json.focusSettings.repeat,false);assert.equal(json.focusSettings.totalMinutes,90);assert.equal(json.focusSettings.focusMinutes,30);assert.equal(json.focusSettings.breakMinutes,8);assert.equal(json.focusSessions[0].assignment.clientName,'Alpha');assert.equal(json.focusSessions[0].note,'Drafted client scope');assert.equal(json.focusRun.status,'completed');});
 test('deleting linked task and undoing planner work preserve focus history',()=>{const {a,ctx}=timer(5,5,0);a.capture();a.focusStart(epoch);a.deleteItem('task','t0');ctx.confirm.onConfirm();a.focusFinish(epoch+minute);assert.equal(a.state().focusSessions[0].assignment.taskTitle,'Task 0');a.recoverChange(false);assert(a.state().tasks.some(t=>t.id==='t0'));assert.equal(a.state().focusSessions[0].durationMs,minute);assert.equal(a.state().focusRun.status,'completed');});
 test('weekly allocation splits active intervals across Monday midnight',()=>{const {a}=timer();const monday=new Date(2026,8,21).getTime();const f=fixture();f.focusSessions=[{id:'cross',intervals:[{start:monday-5*minute,end:monday+5*minute}],assignment:{taskTitle:'Cross-week work'},outcome:'completed'}];a.setState(f);assert.equal(a.focusWeekSessions(a.weekBounds(0,monday))[0].ms,5*minute);assert.equal(a.focusWeekSessions(a.weekBounds(-1,monday))[0].ms,5*minute);});
 test('old backups migrate with defaults; malformed timer and intervals are rejected',()=>{const {a}=app();const old=a.normalize(fixture());assert.equal(old.focusSessions.length,0);assert.equal(old.focusSettings.focusMinutes,25);assert.equal(old.focusRun,null);const bad=a.normalize({focusRun:{id:'x',status:'running',phase:'focus'},focusSessions:[{id:'bad',intervals:[{start:1,end:Infinity},{start:1,end:1e100}]}]});assert.equal(bad.focusRun,null);assert.equal(bad.focusSessions.length,0);});
@@ -248,4 +249,267 @@ test('a manual focus session rejects a bad date or a non-positive length before 
  a.capture();a.addFocusSession();ctx.form.onSubmit({date:'2026-09-17',minutes:'20',target:'',note:''});
  assert.equal(a.state().focusSessions.length,1);              // unassigned is allowed
  assert.equal(a.state().focusSessions[0].assignment.clientId,'');
+});
+
+/* ---- the backup format has to survive features arriving and leaving ---- */
+const backup=()=>({version:3,exportedAt:'2026-09-21T00:00:00.000Z',
+ clients:[{id:'c1',name:'Alpha',status:'Active'}],
+ projects:[{id:'p1',clientId:'c1',name:'Build',status:'Active'}],
+ tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'Write',status:'To Do',order:1000}],
+ focusSettings:{totalMinutes:60,focusMinutes:25,breakMinutes:5,repeat:false,budgetMode:'session'},
+ focusRun:null,focusSessions:[]});
+
+test('a backup round-trips through export and import unchanged',()=>{
+ const {a,ctx}=app();a.setState(backup());a.capture();
+ const exported=JSON.parse(JSON.stringify(a.serialize()));
+ a.setState({clients:[],projects:[],tasks:[]});
+ assert(a.importBackup(JSON.stringify(exported),'b.json'));
+ ctx.confirm.onConfirm();
+ assert.deepEqual(JSON.parse(JSON.stringify(a.serialize())),exported);
+});
+test('fields a future build adds survive a round trip through this one',()=>{
+ const {a,ctx}=app();a.capture();
+ const future=backup();
+ future.version=9;                                  // written by a later build
+ future.workspaces=[{id:'w1',name:'Personal'}];      // a top-level feature we do not have
+ future.clients[0].archivedAt='2026-01-01';          // a client field we do not have
+ future.projects[0].colour='#123456';
+ future.tasks[0].assignee='someone';
+ future.tasks[0].subtasks=[{id:'s1',done:false}];
+ assert(a.importBackup(JSON.stringify(future),'future.json'));
+ assert.match(ctx.confirm.title,/newer/i);           // and it says so before replacing
+ ctx.confirm.onConfirm();
+ const out=a.serialize();
+ assert.equal(JSON.stringify(out.workspaces),JSON.stringify([{id:'w1',name:'Personal'}]));
+ assert.equal(out.clients[0].archivedAt,'2026-01-01');
+ assert.equal(out.projects[0].colour,'#123456');
+ assert.equal(out.tasks[0].assignee,'someone');
+ assert.equal(JSON.stringify(out.tasks[0].subtasks),JSON.stringify([{id:'s1',done:false}]));
+ assert.equal(out.clients[0].name,'Alpha');          // and the fields we do own still work
+ assert.equal(out.version,a.SCHEMA());               // rewritten at our version, not theirs
+ assert.equal(out.tasks[0].x,undefined);             // the carrier itself never leaks out
+});
+test('a carried field cannot shadow one the app owns, and oversized carriers are dropped',()=>{
+ const {a}=app();
+ const doc=backup();
+ doc.tasks[0].x={title:'HIJACKED'};                  // the carrier key itself is never trusted
+ a.setState(doc);
+ assert.equal(a.state().tasks[0].title,'Write');
+ assert.equal(a.serialize().tasks[0].title,'Write');
+ const fat=backup();
+ fat.tasks[0].blob='z'.repeat(5000);                 // past EXTRA_BUDGET
+ a.setState(fat);
+ assert.equal(a.serialize().tasks[0].blob,undefined);
+ const slim=backup();
+ slim.tasks[0].blob='z'.repeat(100);
+ a.setState(slim);
+ assert.equal(a.serialize().tasks[0].blob.length,100);
+});
+test('normalize stays stable across repeated round trips so history comparison holds',()=>{
+ const {a}=app();
+ const doc=backup();doc.tasks[0].futureField={nested:[1,2]};doc.custom='kept';
+ a.setState(doc);
+ const once=JSON.stringify(a.serialize());
+ a.setState(JSON.parse(once));
+ assert.equal(JSON.stringify(a.serialize()),once);   // byte-identical, or undo/dirty checks break
+ a.setState(JSON.parse(JSON.stringify(a.serialize())));
+ assert.equal(JSON.stringify(a.serialize()),once);
+});
+test('a backup written before a field existed still loads',()=>{
+ const {a,ctx}=app();a.capture();
+ const v1={clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],
+  tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'Old task'}]};   // no version, no focus, no order
+ assert(a.importBackup(JSON.stringify(v1),'v1.json'));
+ assert.doesNotMatch(ctx.confirm.title,/newer/i);
+ ctx.confirm.onConfirm();
+ const out=a.serialize();
+ assert.equal(out.version,a.SCHEMA());
+ assert.equal(out.tasks[0].order,1000);              // placed by the migration
+ assert.equal(out.focusSettings.focusMinutes,25);    // defaulted
+ assert.equal(JSON.stringify(out.focusSessions),'[]');
+});
+test('import refuses bad input atomically and names the drafts-file mistake',()=>{
+ const {a}=app();a.setState(backup());
+ const before=JSON.stringify(a.serialize());
+ for (const bad of ['not json','null','42','"text"','{}','{"clients":"nope"}']) {
+  assert.equal(a.importBackup(bad,'x.json'),false,bad);
+  assert.equal(JSON.stringify(a.serialize()),before);
+ }
+ assert.equal(a.importBackup('[{"action":"task","title":"One"}]','drafts.json'),false);
+ assert.match(a.lastToast()||'',/drafts file/i);
+ assert.equal(JSON.stringify(a.serialize()),before);
+});
+test('import is one undoable step and clears stale view state',()=>{
+ const {a,ctx}=app();a.setState(backup());a.capture();
+ a.setSearch('write');a.select(['t1']);a.setScope('c1');
+ const before=JSON.stringify(a.serialize());
+ const other=backup();other.clients[0].name='Beta';other.tasks[0].title='Different';
+ assert(a.importBackup(JSON.stringify(other),'other.json'));
+ ctx.confirm.onConfirm();
+ assert.equal(a.state().clients[0].name,'Beta');
+ a.recoverChange(false);                             // one Undo brings the old planner back
+ assert.equal(JSON.stringify(a.serialize()),before);
+});
+test('the summary counts what the user is about to get',()=>{
+ const {a}=app();
+ assert.equal(a.describeDoc(a.normalize(backup())),'1 client, 1 project, 1 task, 0 focus sessions');
+ assert.equal(a.describeDoc(a.normalize({clients:[],projects:[],tasks:[]})),
+  '0 clients, 0 projects, 0 tasks, 0 focus sessions');
+});
+test('migrate leaves a current document alone and versions an unversioned one',()=>{
+ const {a}=app();
+ const doc=backup();
+ assert.equal(JSON.stringify(a.migrate(doc)),JSON.stringify(doc));
+ assert.equal(a.serialize.call(null,a.normalize({clients:[]})).version,a.SCHEMA());
+});
+
+/* ---- the row's actions moved into one menu; search shows where a task lives ---- */
+test('the row menu still offers every action the row used to carry inline',()=>{
+ const {a,ctx}=app();
+ a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],
+  tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'Write',status:'To Do',order:1000,notes:'Some notes'},
+         {id:'t2',projectId:'p1',clientId:'c1',title:'No notes',status:'To Do',dueDate:'2026-01-01',order:2000}]});
+ a.capture();
+ a.taskMenu('t1',{classList:{add(){}}});
+ const labels=Array.from(ctx.sheet.actions,x=>x.label);
+ assert.equal(ctx.sheet.title,'Write');
+ assert(labels.some(l=>/due date/i.test(l)));
+ assert(labels.some(l=>/^Move/.test(l)));
+ assert(labels.some(l=>/^Edit/.test(l)));
+ assert(labels.some(l=>/notes/i.test(l)));              // only because this task has notes
+ assert(labels.some(l=>/^Delete/.test(l)));
+ assert.equal(ctx.sheet.actions[ctx.sheet.actions.length-1].danger,true);
+ a.taskMenu('t2',{classList:{add(){}}});
+ const plain=Array.from(ctx.sheet.actions,x=>x.label);
+ assert(!plain.some(l=>/notes/i.test(l)));              // no notes, no entry
+ assert(plain.some(l=>/change the due date/i.test(l))); // wording follows the task
+ const html=a.renderTasks(a.state().tasks,'k','');
+ assert.match(html,/data-act="task-menu"/);
+ assert.doesNotMatch(html,/data-act="task-move"/);      // no longer sitting on the row
+ assert.doesNotMatch(html,/data-act="task-notes"/);
+ assert.doesNotMatch(html,/data-act="delete" data-kind="task"/);
+});
+test('a search result names the client and project it belongs to',()=>{
+ const {a}=app();
+ a.setState({clients:[{id:'c1',name:'Alpha',accent:'#4c6385'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],
+  tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'Write the scope',status:'To Do',order:1000},
+         {id:'t2',title:'Loose scope note',status:'To Do',order:2000}]});
+ const chip=a.taskHomeChip(a.state().tasks[0]);
+ assert.match(chip,/class="task-home"/);
+ assert.match(chip,/--hue:#4c6385/);                    // carries the client's own colour
+ assert.match(chip,/<b>Alpha<\/b>/);
+ assert.match(chip,/Build/);
+ assert.match(a.taskHomeChip(a.state().tasks[1]),/<b>Unassigned<\/b>/);
+ // it only appears while searching, since the board's nesting already says it
+ assert.doesNotMatch(a.renderTasks(a.state().tasks,'k',''),/task-home/);
+ a.setSearch('scope');
+ assert.match(a.renderTasks(a.state().tasks,'k',''),/task-home/);
+});
+test('search folds Quick add away and gives it back, without changing the saved preference',()=>{
+ const {a,element,data}=app();
+ const card=element('qaCard'); card.open=true;
+ a.setSearch('scope'); a.syncCaptureForSearch();
+ assert.equal(card.open,false);                         // out of the way while searching
+ a.setSearch(''); a.syncCaptureForSearch();
+ assert.equal(card.open,true);                          // and back when cleared
+ // while folded away, what gets saved is still the user's own choice
+ a.setSearch('scope'); a.syncCaptureForSearch();
+ a.setExpanded('p:p1');                                 // any change that persists layout
+ const saved=JSON.parse(data.get('project-planner-v1-view')||'{}');
+ if ('captureOpen' in saved) assert.equal(saved.captureOpen,true);
+});
+
+/* ---- steps: a checklist inside a task, never a fourth level ---- */
+// vm-created values do not share this realm's prototypes, so compare structurally
+const eq=(actual,expected)=>assert.equal(JSON.stringify(actual),JSON.stringify(expected));
+
+const withSteps=(steps)=>({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],
+ tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'Write',status:'To Do',order:1000,steps:steps}]});
+
+test('a task with no steps is untouched by the feature existing',()=>{
+ const {a}=app();
+ a.setState(withSteps([]));
+ assert.equal(a.stepsChip(a.state().tasks[0]),'');        // no chip
+ assert.equal(a.stepsBlock(a.state().tasks[0]),'');       // no list
+ const html=a.renderTasks(a.state().tasks,'k','');
+ assert.doesNotMatch(html,/chip steps|step-list/);
+});
+test('steps are added, counted, ticked, renamed and removed',()=>{
+ const {a}=app();
+ a.setState(withSteps([]));
+ assert.equal(a.addStep('t1','Draft the scope'),true);
+ assert.equal(a.addStep('t1','  Get legal sign-off  '),true);   // trimmed
+ assert.equal(a.addStep('t1','   '),false);                     // a blank step is not a step
+ assert.equal(a.addStep('missing','x'),false);
+ const steps=()=>a.state().tasks[0].steps;
+ eq(steps().map(s=>s.text),['Draft the scope','Get legal sign-off']);
+ assert.match(a.stepsChip(a.state().tasks[0]),/0 of 2 steps/);
+ a.setStepDone('t1',steps()[0].id,true);
+ assert.equal(a.stepsDone(a.state().tasks[0]),1);
+ assert.match(a.stepsChip(a.state().tasks[0]),/1 of 2 steps/);
+ a.setStepDone('t1',steps()[1].id,true);
+ assert.match(a.stepsChip(a.state().tasks[0]),/all-done/);       // the chip goes green at 100%
+ a.renameStep('t1',steps()[0].id,'Draft the scope properly');
+ assert.equal(steps()[0].text,'Draft the scope properly');
+ a.renameStep('t1',steps()[0].id,'   ');                         // clearing removes it
+ assert.equal(steps().length,1);
+ a.removeStep('t1',steps()[0].id);
+ assert.equal(steps().length,0);
+});
+test('a step never becomes a task: only text and a tick survive normalize',()=>{
+ const {a}=app();
+ a.setState(withSteps([{id:'s1',text:'Real',done:true,status:'In Progress',dueDate:'2026-01-01',order:5}]));
+ const step=a.state().tasks[0].steps[0];
+ eq(Object.keys(step).sort(),['done','id','text']);
+ assert.equal(step.done,true);
+});
+test('malformed steps are dropped rather than breaking the task',()=>{
+ const {a}=app();
+ a.setState(withSteps([null,'text',{},{text:''},{text:'   '},{id:'d',text:'Keep'},{id:'d',text:'Duplicate id'}]));
+ eq(a.state().tasks[0].steps.map(s=>s.text),['Keep']);
+ a.setState(withSteps('not an array'));
+ eq(a.state().tasks[0].steps,[]);
+ // a step missing an id is given one rather than discarded
+ a.setState(withSteps([{text:'No id here'}]));
+ assert.equal(a.state().tasks[0].steps.length,1);
+ assert(a.state().tasks[0].steps[0].id);
+});
+test('steps survive a backup round trip and count as a known field',()=>{
+ const {a,ctx}=app();
+ a.setState(withSteps([{id:'s1',text:'One',done:false},{id:'s2',text:'Two',done:true}]));
+ const exported=JSON.parse(JSON.stringify(a.serialize()));
+ assert.equal(exported.version,a.SCHEMA());
+ assert.equal(exported.tasks[0].steps.length,2);
+ assert.equal(exported.tasks[0].x,undefined);            // known field, not carried as foreign
+ a.capture();
+ a.setState({clients:[],projects:[],tasks:[]});
+ assert(a.importBackup(JSON.stringify(exported),'b.json'));
+ ctx.confirm.onConfirm();
+ assert.equal(JSON.stringify(a.serialize()),JSON.stringify(exported));
+});
+test('search reaches into step text',()=>{
+ const {a}=app();
+ a.setState(withSteps([{id:'s1',text:'Chase the procurement team',done:false}]));
+ a.setSearch('procurement');
+ eq(a.matchingTasks().map(t=>t.title),['Write']);
+ a.setSearch('nothinghere');
+ eq(a.matchingTasks().map(t=>t.title),[]);
+});
+test('the menu wording follows whether the task has steps yet',()=>{
+ const {a,ctx}=app();
+ a.setState(withSteps([]));
+ a.capture();
+ a.taskMenu('t1',{classList:{add(){}}});
+ assert.equal(ctx.sheet.actions[0].label,'Break into steps');
+ a.addStep('t1','One');
+ a.taskMenu('t1',{classList:{add(){}}});
+ assert.equal(ctx.sheet.actions[0].label,'Add a step');
+});
+test('a step list is capped, and so is a step',()=>{
+ const {a}=app();
+ a.setState(withSteps(Array.from({length:150},(_,i)=>({id:'s'+i,text:'Step '+i,done:false}))));
+ assert.equal(a.state().tasks[0].steps.length,100);
+ assert.equal(a.addStep('t1','one too many'),false);
+ a.setState(withSteps([{id:'s1',text:'z'.repeat(900),done:false}]));
+ assert.equal(a.state().tasks[0].steps[0].text.length,500);
 });

@@ -236,7 +236,10 @@
   /* ================= client + project cards ================= */
   /* Multi-column, not grid: a grid row locks every card to the tallest in its
      row, leaving dead space beside short cards. Columns balance instead. */
-  .board { column-count: 2; column-gap: 18px; }
+  /* At most two columns, and only when each would still be wide enough to hold
+     a task row on one line. A 300px column at a half-screen window costs every
+     row inside it far more than the column gains. */
+  .board { columns: 420px 2; column-gap: 18px; }
   /* Two columns need two cards. A single card — one client, or the
      one-client scope view — takes the whole board rather than half of it. */
   .board:has(> .client:only-child) { column-count: 1; }
@@ -286,13 +289,17 @@
 
   .projects {
     display: grid; gap: 12px; padding: 14px 16px 16px; align-items: start;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   }
   @media (max-width: 520px) { .projects { padding: 12px; } }
 
   .project {
     background: var(--panel-2); border: 1px solid var(--line);
     border-radius: var(--r-md); overflow: hidden;
+    /* Rows inside a project must key off the project's width, not the client's.
+       A 688px client can hold 320px projects, and a task row laid out at 320px
+       was being measured against 688px and told it had room it did not have. */
+    container-type: inline-size;
   }
   .row.project-row { padding: 13px 14px 10px; gap: 9px; }
   .row.project-row .name { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
@@ -416,6 +423,25 @@
   .field .ferr { font-size: 13.5px; color: var(--danger); margin-top: 6px; }
   .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
+  .modal.sheet .action-list { display: flex; flex-direction: column; gap: 5px; margin: 10px 0 2px; }
+  .action-row { width: 100%; text-align: left; padding: 12px 14px; font-size: 15px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .action-row:hover:not(:disabled) { background: var(--brand-soft); border-color: var(--brand-line); color: var(--ink); }
+  .action-row.danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-line); }
+  .action-row.danger:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+
+  /* One button standing in for Move/Edit/Delete once a card is too narrow to
+     hold them on the row. Hidden by default; the container query turns it on. */
+  .card-menu { display: none; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; color: var(--ink-2); }
+  .card-menu svg { display: block; }
+  .task-menu { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; color: var(--ink-3); }
+  .task-menu:hover:not(:disabled) { color: var(--brand); background: var(--brand-soft); border-color: transparent; }
+  .task-menu svg { display: block; }
+  /* Without hover there is no other cue that the row has actions behind it,
+     so the control has to read as a control on its own. */
+  @media (hover: none), (pointer: coarse) {
+    .task-menu { color: var(--ink-2); background: var(--panel-2); border: 1px solid var(--line); }
+  }
+
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: var(--rail); color: var(--rail-ink); font-size: 14.5px; font-weight: 500;
@@ -483,7 +509,38 @@
   .task .notes-preview { display: none; flex: 1 0 100%; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); font-size: 14px; }
   .task:hover .notes-preview, .task:focus-within .notes-preview { display: block; }
   .notes-hint { color: var(--ink-3); font-size: 12px; }
-  .task-home { color: var(--ink-2); font-size: 12px; }
+  /* Steps: a checklist inside a task, never a second task list. One chip on
+     the row when there are any, nothing at all when there are none. */
+  .chip.steps { flex: none; min-width: max-content; cursor: pointer; background: var(--panel-2); border-color: var(--line); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  button.chip.steps:hover:not(:disabled) { border-color: var(--brand); color: var(--ink); background: var(--panel-2); }
+  .chip.steps.all-done { background: var(--done-bg); border-color: var(--done-line); color: var(--done); }
+  button.chip.steps.all-done:hover:not(:disabled) { background: var(--done-bg); border-color: var(--done); color: var(--done); }
+
+  .step-list { flex: 1 0 100%; margin: 2px 0 4px 34px; display: flex; flex-direction: column; gap: 1px; }
+  .step { display: flex; align-items: center; gap: 9px; padding: 2px 4px; border-radius: 7px; }
+  .step:hover { background: var(--panel-2); }
+  .step input[type="checkbox"] { appearance: none; -webkit-appearance: none; flex: 0 0 16px; width: 16px; height: 16px; margin: 0; padding: 0; border: 1.5px solid var(--ink-3); border-radius: 5px; background: transparent; cursor: pointer; }
+  .step input[type="checkbox"]:checked { border-color: var(--done); background: var(--done) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m5 10 3 3 7-7' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; }
+  .step-label { flex: 1 1 auto; min-width: 0; text-align: left; padding: 3px 2px; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; border-radius: 6px; }
+  .step-label:hover:not(:disabled) { background: transparent; border: 0; color: var(--brand); }
+  .step.done .step-label { color: var(--ink-3); text-decoration: line-through; }
+  .step .inline-input.step-text { flex: 1 1 auto; font-size: 14.5px; }
+  .step-remove { flex: none; width: 24px; height: 24px; padding: 0; font-size: 17px; line-height: 1; color: var(--ink-3); }
+  .step-remove:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); border-color: transparent; }
+  .step-add { align-self: flex-start; padding: 4px 6px; border: 0; background: transparent; color: var(--ink-3); font-size: 14px; }
+  .step-add:hover:not(:disabled) { background: var(--brand-soft); color: var(--brand); border: 0; }
+  .inline-input.step-new { margin: 2px 4px; font-size: 14.5px; }
+  @media (hover: hover) and (pointer: fine) {
+    .step-remove { opacity: 0; transition: opacity .15s; }
+    .step:hover .step-remove, .step:focus-within .step-remove { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .step-remove { transition: none; } }
+  @container (max-width: 430px) { .step-list { order: 8; margin-left: 24px; } }
+
+  .task-home { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .task-home b { font-weight: 600; color: var(--ink); }
+  .task-home .home-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hue, var(--ink-3)); }
+  .task-home .home-sep { color: var(--ink-3); margin: 0 1px; }
   .search-results { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); container-type: inline-size; }
   .touch-notes { display: none; }
   .task.notes-open .notes-preview { display: block; }
@@ -520,22 +577,54 @@
     .task:hover .notes-preview, .task:focus-within .notes-preview { display: none; }
     .task.notes-open .notes-preview { display: block; }
   }
+  @container (max-width: 700px) {
+    /* A card header keeps its one primary action and folds the rest away,
+       rather than spending a whole line on four labelled buttons. */
+    .client-row .acts > button:not([data-act="add-task"]):not(.card-menu),
+    .pfoot .acts > button:not([data-act="add-task"]):not(.card-menu) { display: none; }
+    .acts > .card-menu { display: inline-flex; }
+  }
+  /* Narrower still: the same two-line shape the task rows use, so a card and
+     the rows inside it break the same way instead of each inventing its own. */
+  @container (max-width: 560px) {
+    .row.client-row { row-gap: 4px; }
+    .client-row > .cdot { order: 0; }
+    .client-row > .disclosure, .client-row > .name { order: 1; flex: 1 1 60px; min-width: 0; }
+    .client-row > .acts { order: 2; margin-left: auto; }
+    .client-row::after { content: ""; order: 3; flex-basis: 100%; height: 0; }
+    .client-row > select.badge { order: 4; margin-left: 38px; }
+    .client-row > .meta { order: 5; }
+
+    .row.project-row { row-gap: 4px; }
+    .project-row > .grow { flex: 1 1 60px; min-width: 0; }
+  }
   @container (max-width: 480px) {
     .row { flex-wrap: wrap; gap: 8px; }
     .row .name, .row .grow { min-width: 0; overflow-wrap: anywhere; }
-    .row .acts { flex-basis: 100%; margin-left: 0; display: flex; flex-wrap: wrap; }
-    .row .acts button { flex: 1; }
     .pfoot { flex-wrap: wrap; gap: 8px; }
-    .pfoot .acts { width: 100%; margin-left: 0; display: flex; gap: 6px; }
-    .pfoot .acts button { flex: 1; font-size: 14px; }
-    .task { gap: 8px; padding: 12px 4px; }
-    .task .task-check { width: 24px; height: 24px; flex-basis: 24px; margin: 10px 4px; }
-    .task .stack { flex-basis: 100%; order: -1; }
-    .task .acts { margin-left: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+    .task { gap: 8px; padding: 6px 4px; }
+    .task .task-check { width: 22px; height: 22px; flex-basis: 22px; margin: 0 2px; }
+    /* Shrink rather than claim a whole line of its own. */
+    .task .stack { flex: 1 1 90px; }
     .task .chip { white-space: normal; overflow-wrap: anywhere; }
     .task .notes-preview { order: 5; }
   }
+  /* Too narrow for one line, so use exactly two: the task on top, its status
+     and date beneath. The break is explicit rather than left to flex-wrap,
+     which is what produced the old scattered three-and-four-line rows. */
+  @container (max-width: 430px) {
+    .task { row-gap: 3px; }
+    .task > .task-check { order: 0; }
+    .task > .stack      { order: 1; flex: 1 1 60px; }
+    .task > .task-menu  { order: 2; width: 26px; height: 26px; }
+    .task::after        { content: ""; order: 3; flex-basis: 100%; height: 0; }
+    .task > select.badge { order: 4; margin-left: 30px; }
+    .task > .chip.due, .task > .chip.due-add { order: 5; }
+    .task > .notes-preview { order: 9; }
+  }
+
   @media (hover: none) and (pointer: coarse) {
+    .task > .chip.due-add { display: none; }
     .touch-notes { display: inline-flex; align-items: center; min-height: 44px; }
     .notes-hint { display: none; }
     .task:hover .notes-preview, .task:focus-within .notes-preview { display: none; }
@@ -590,8 +679,10 @@
   .focus-log-summary > span { font-size: 11px; color: var(--ink-3); }
   .focus-week-nav { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding-top: 2px; }
   .focus-week-nav button { font-size: 12px; border-radius: 9px; min-width: 30px; }
-  #focusWeekLabel { font-size: 12px; font-weight: 500; }
-  .focus-copy { margin-left: auto; }
+  #focusWeekLabel { font-size: 12px; font-weight: 500; min-width: 11ch; text-align: center; }
+  /* Week navigation on the left, the actions that act on that week on the
+     right, with the gap between them doing the separating. */
+  .focus-week-nav [data-act="focus-this-week"] { margin-right: auto; }
   .focus-log-help { font-size: 11px; color: var(--ink-3); }
   .focus-entry { display: flex; gap: 18px; justify-content: space-between; padding: 16px 0; border-top: 1px solid var(--line-soft); }
   .focus-entry > :first-child { min-width: 0; }
@@ -639,8 +730,8 @@
   .disclosure { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
   .disclosure .name { font-weight: 600; }
   @media (hover:hover) and (pointer:fine) {
-    .task > .acts, .task > [data-act="task-move"], .task > .chip.due-add { opacity: 0; transition: opacity .15s; }
-    .task:hover > .acts, .task:focus-within > .acts, .task:hover > [data-act="task-move"], .task:focus-within > [data-act="task-move"],
+    .task > .task-menu, .task > .chip.due-add { opacity: 0; transition: opacity .15s; }
+    .task:hover > .task-menu, .task:focus-within > .task-menu,
     .task:hover > .chip.due-add, .task:focus-within > .chip.due-add { opacity: 1; }
   }
   @media(max-width:600px) {
@@ -649,7 +740,7 @@
     #focusMiniTask { flex: 1; }
     .focus-card:not([open]) .panel-chevron { margin-left: auto; }
   }
-  @media(prefers-reduced-motion:reduce) { .panel-chevron,.task > .acts,.task > .chip.due-add { transition: none; } }
+  @media(prefers-reduced-motion:reduce) { .panel-chevron,.task > .task-menu,.task > .chip.due-add { transition: none; } }
   .workspace-nav { display:grid; gap:5px; margin:4px 0 8px; }
   .workspace-tab { display:flex; align-items:center; gap:10px; width:100%; padding:12px; border:0; border-radius:12px; background:transparent; color:var(--ink-2); text-align:left; font-weight:550; }
   .workspace-tab[aria-current="page"] { background:var(--brand-soft); color:var(--brand); }
@@ -752,6 +843,8 @@
         <button type="button" data-theme-choice="dark" aria-pressed="false" title="Graphite &amp; Dusty Blue">Dark</button>
       </div>
       <button class="railbtn hidden" id="exportBtn" data-act="export">Export backup</button>
+      <button class="railbtn" id="importBtn" data-act="import">Import backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" class="hidden" aria-hidden="true" tabindex="-1">
     </div>
   </aside>
 
@@ -1083,8 +1176,80 @@
   var saveTimer = null;
   var lastSaved = null;          // JSON string of the last confirmed write
 
-  function serialize() {
-    return { version: 2, clients: state.clients, projects: state.projects, tasks: state.tasks, focusSettings: state.focusSettings, focusRun: state.focusRun, focusSessions: state.focusSessions };
+  /* ---------------- document format and its evolution ----------------
+     Raising SCHEMA_VERSION records that the shape changed; `MIGRATIONS` gives
+     each change a home. Reading is deliberately lenient in both directions:
+     a field this build has never heard of is carried through untouched rather
+     than dropped, so a planner written by a build with more features survives
+     a round trip through one with fewer. That is what keeps adding or removing
+     a feature later from quietly destroying data. */
+  var SCHEMA_VERSION = 4;
+  //  1  clients, projects and tasks only
+  //  2  focus settings, the in-flight run, and logged sessions
+  //  3  manual task `order`
+  //  4  task `steps`, a checklist of {id, text, done}
+
+  var CLIENT_KEYS  = ["id", "name", "status", "accent", "accent2", "brandChecked"];
+  var PROJECT_KEYS = ["id", "clientId", "name", "status"];
+  var TASK_KEYS    = ["id", "projectId", "clientId", "title", "status", "dueDate", "note", "notes", "order", "steps"];
+  var DOC_KEYS     = ["version", "clients", "projects", "tasks", "focusSettings", "focusRun", "focusSessions"];
+  var EXTRA_BUDGET = 4000;          // characters of unrecognised data kept per record
+
+  /* Collects the fields we do not recognise so serialize() can put them back.
+     Bounded, so a malformed or hostile file cannot grow the document without
+     limit; anything over budget is dropped rather than carried. */
+  function carryUnknown(raw, known) {
+    if (!raw || typeof raw !== "object") return null;
+    var out = null;
+    Object.keys(raw).forEach(function (key) {
+      if (key === "x" || known.indexOf(key) !== -1) return;
+      if (!out) out = {};
+      out[key] = raw[key];
+    });
+    if (!out) return null;
+    var text;
+    try { text = JSON.stringify(out); } catch (e) { return null; }   // cyclic or unserialisable
+    return (text && text.length <= EXTRA_BUDGET) ? out : null;
+  }
+
+  /* Puts carried fields back alongside the known ones. Known fields win, so a
+     stale copy of a field we own cannot shadow the real one. */
+  function withUnknown(record) {
+    if (!record || !("x" in record)) return record;
+    // Records with nothing foreign still carry an empty carrier internally;
+    // it must not reach the saved document or every row exports `"x": null`.
+    var out = Object.assign({}, record.x, record);
+    delete out.x;
+    return out;
+  }
+
+  /* Each entry takes the document as the previous version wrote it and returns
+     the next shape. Field-level defaulting stays in normalize(), so a version
+     whose change only adds an optional field needs no entry here. Versions 2
+     and 3 are of that kind: focus defaults and task `order` are both filled in
+     by normalize() itself. */
+  var MIGRATIONS = Object.create(null);
+
+  function migrate(raw) {
+    if (!raw || typeof raw !== "object") return raw;
+    var from = Number.isFinite(raw.version) ? Number(raw.version) : 1;
+    var doc = raw;
+    for (var v = from; v < SCHEMA_VERSION; v++) {
+      if (MIGRATIONS[v + 1]) doc = MIGRATIONS[v + 1](doc);
+    }
+    return doc;
+  }
+
+  function serialize(from) {
+    var st = from || state;
+    var doc = {
+      version: SCHEMA_VERSION,
+      clients: st.clients.map(withUnknown),
+      projects: st.projects.map(withUnknown),
+      tasks: st.tasks.map(withUnknown),
+      focusSettings: st.focusSettings, focusRun: st.focusRun, focusSessions: st.focusSessions
+    };
+    return st.x ? Object.assign({}, st.x, doc) : doc;
   }
 
   /* Manual task order. Values are spaced so a drop between two neighbours can
@@ -1105,9 +1270,37 @@
     return 0;
   }
 
+  /* A step is text and a tick, deliberately nothing more. Giving a step its
+     own status, date or assignment would make it a task, and the point of
+     steps is to break a task down without adding a fourth level to the tree. */
+  var STEP_LIMIT = 100;
+  var STEP_TEXT_LIMIT = 500;
+
+  function normalizeSteps(raw) {
+    if (!Array.isArray(raw)) return [];
+    var seen = new Set();
+    return raw.filter(function (x) { return x && typeof x === "object"; })
+      .map(function (x) {
+        return { id: (typeof x.id === "string" && x.id) ? x.id : newId(),
+          text: String(x.text == null ? "" : x.text).slice(0, STEP_TEXT_LIMIT),
+          done: x.done === true };
+      })
+      .filter(function (x) {
+        if (!x.text.trim() || seen.has(x.id)) return false;   // a blank step is not a step
+        seen.add(x.id); return true;
+      })
+      .slice(0, STEP_LIMIT);
+  }
+
+  function stepsDone(task) {
+    return (task.steps || []).filter(function (x) { return x.done; }).length;
+  }
+
   function normalize(raw) {
     var next = { clients: [], projects: [], tasks: [], focusSettings: focusDefaults(), focusRun: null, focusSessions: [] };
     if (!raw || typeof raw !== "object") return next;
+    raw = migrate(raw);
+    next.x = carryUnknown(raw, DOC_KEYS);
 
     next.focusSettings = normalizeFocusSettings(raw.focusSettings);
     next.focusRun = normalizeFocusRun(raw.focusRun);
@@ -1124,7 +1317,8 @@
         status: oneOf(c.status, CLIENT_STATUS),
         accent: isHex(c.accent) ? String(c.accent).toLowerCase() : "",
         accent2: isHex(c.accent2) ? String(c.accent2).toLowerCase() : "",
-        brandChecked: c.brandChecked === true
+        brandChecked: c.brandChecked === true,
+        x: carryUnknown(c, CLIENT_KEYS)
       });
     });
     rp.forEach(function (p) {
@@ -1134,7 +1328,8 @@
         id: String(p.id),
         clientId: String(p.clientId),
         name: String(p.name || "Untitled project"),
-        status: oneOf(p.status, PROJECT_STATUS)
+        status: oneOf(p.status, PROJECT_STATUS),
+        x: carryUnknown(p, PROJECT_KEYS)
       });
     });
     rt.forEach(function (t) {
@@ -1152,7 +1347,9 @@
         dueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(t.dueDate || "")) ? String(t.dueDate) : "",
         note: t.note ? String(t.note) : "",
         notes: t.notes ? String(t.notes) : "",
-        order: Number.isFinite(t.order) ? Number(t.order) : null
+        order: Number.isFinite(t.order) ? Number(t.order) : null,
+        steps: normalizeSteps(t.steps),
+        x: carryUnknown(t, TASK_KEYS)
       });
     });
     // One-time placement for tasks saved before `order` existed: sort them by
@@ -1282,7 +1479,7 @@
         if (snap.metadata && snap.metadata.hasPendingWrites) return;  // our own write
         if (!snap.exists) return;
         var incoming = normalize(snap.data());
-        var asString = JSON.stringify(Object.assign({version:2}, incoming));
+        var asString = JSON.stringify(serialize(incoming));
         if (asString === lastSaved) return;                           // nothing new
         if (modalOpen || draft) { pendingRemote = incoming; return; } // don't yank the UI
         state = incoming;
@@ -1569,8 +1766,24 @@
     return '<span class="disclosure">' + twistButton(key, closed, name) +
       '<span class="name">' + esc(name) + '</span></span>';
   }
+  /* Quick add steps aside while a search is running and comes back when the
+     search is cleared. It is a temporary state, never the saved preference:
+     persistLayout writes what the user chose, not what search did to it. */
+  var captureHiddenBySearch = false;
+
+  function syncCaptureForSearch() {
+    var card = $("qaCard");
+    if (!card) return;
+    if (searchQuery.trim()) {
+      if (card.open) { captureHiddenBySearch = true; card.open = false; }
+    } else if (captureHiddenBySearch) {
+      captureHiddenBySearch = false; card.open = true;
+    }
+  }
+
   function persistLayout() {
-    try { localStorage.setItem(LOCAL_KEY+"-view",JSON.stringify({page:workspacePage,open:openState,expanded:expanded,focusOpen:$("focusPanel").open,captureOpen:$("qaCard").open})); } catch(e) {}
+    var captureOpen = captureHiddenBySearch ? true : $("qaCard").open;
+    try { localStorage.setItem(LOCAL_KEY+"-view",JSON.stringify({page:workspacePage,open:openState,expanded:expanded,focusOpen:$("focusPanel").open,captureOpen:captureOpen})); } catch(e) {}
   }
   function initLayout() {
     try { var prefs=JSON.parse(localStorage.getItem(LOCAL_KEY+"-view") || "null"); if(prefs) {
@@ -1594,6 +1807,65 @@
      Title and due date are editable on the row; the Edit dialog still owns
      everything else. */
   var inlineEdit = null;                 // {id, field} or null
+
+  /* The task whose "add a step" input is open. Typing Enter keeps it open so
+     a list can be entered in one run rather than one click per step. */
+  var stepInput = null;
+
+  function stepsOpen(id) { return !!expanded["s:" + id]; }
+
+  function openSteps(id, on) {
+    if (on) expanded["s:" + id] = true; else delete expanded["s:" + id];
+    persistLayout();
+  }
+
+  function beginStep(id) {
+    if (!byId(state.tasks, id)) return;
+    openSteps(id, true);
+    stepInput = id;
+    render();
+    var el = document.querySelector(".step-new");
+    if (el) el.focus();
+  }
+
+  function addStep(id, text) {
+    var task = byId(state.tasks, id);
+    var value = String(text == null ? "" : text).trim().slice(0, STEP_TEXT_LIMIT);
+    if (!task || !value) return false;
+    if (task.steps.length >= STEP_LIMIT) { toast("That task already has " + STEP_LIMIT + " steps."); return false; }
+    task.steps.push({ id: newId(), text: value, done: false });
+    commit();
+    return true;
+  }
+
+  function setStepDone(taskId, stepId, done) {
+    var task = byId(state.tasks, taskId);
+    var step = task && byId(task.steps, stepId);
+    if (!step || step.done === done) return;
+    step.done = done;
+    commit();
+  }
+
+  function removeStep(taskId, stepId) {
+    var task = byId(state.tasks, taskId);
+    if (!task) return;
+    var before = task.steps.length;
+    task.steps = task.steps.filter(function (x) { return x.id !== stepId; });
+    if (task.steps.length === before) return;
+    if (!task.steps.length) openSteps(taskId, false);   // nothing left to disclose
+    commit();
+  }
+
+  function renameStep(taskId, stepId, text) {
+    var task = byId(state.tasks, taskId);
+    var step = task && byId(task.steps, stepId);
+    if (!step) return;
+    var value = String(text == null ? "" : text).trim().slice(0, STEP_TEXT_LIMIT);
+    if (!value) { removeStep(taskId, stepId); return; }   // clearing a step removes it
+    if (value === step.text) { render(); return; }
+    step.text = value;
+    commit();
+  }
 
   function startInlineEdit(id, field) {
     if (modalOpen || draft || !byId(state.tasks, id)) return;
@@ -1633,6 +1905,45 @@
 
   /* Renders any list of tasks — a project's, a client's loose ones, or the
      unassigned pile. key is the collapse/expand key for the "show more". */
+  /* Nothing at all when a task has no steps: the feature stays invisible
+     until it is used, so an ordinary task row is unchanged by its existence. */
+  function stepsChip(t) {
+    var total = (t.steps || []).length;
+    if (!total) return "";
+    var done = stepsDone(t);
+    var open = stepsOpen(t.id);
+    return '<button type="button" class="chip steps' + (done === total ? " all-done" : "") + '"' +
+      ' data-act="steps-toggle" data-id="' + esc(t.id) + '" aria-expanded="' + (open ? "true" : "false") + '"' +
+      ' title="' + (open ? "Hide" : "Show") + ' steps">' + done + " of " + total + " steps</button>";
+  }
+
+  function stepsBlock(t) {
+    var total = (t.steps || []).length;
+    var adding = stepInput === t.id;
+    if (!stepsOpen(t.id) && !adding) return "";
+    if (!total && !adding) return "";
+    var out = '<div class="step-list">';
+    (t.steps || []).forEach(function (step) {
+      var editing = inlineEdit && inlineEdit.id === step.id && inlineEdit.field === "step";
+      out += '<div class="step' + (step.done ? " done" : "") + '">' +
+        '<input type="checkbox" data-act="step-toggle" data-id="' + esc(t.id) + '" data-step="' + esc(step.id) + '"' +
+          (step.done ? " checked" : "") + ' aria-label="' + esc(step.text) + '">' +
+        (editing
+          ? '<input class="inline-input step-text" type="text" data-act="inline-input" data-field="step" data-id="' + esc(step.id) +
+            '" data-task="' + esc(t.id) + '" value="' + esc(step.text) + '" aria-label="Step">'
+          : '<button type="button" class="step-label" data-act="step-edit" data-id="' + esc(step.id) +
+            '" data-task="' + esc(t.id) + '" title="Rename this step">' + esc(step.text) + "</button>") +
+        '<button type="button" class="ghost step-remove" data-act="step-remove" data-id="' + esc(t.id) +
+          '" data-step="' + esc(step.id) + '" aria-label="Remove step ' + esc(step.text) + '">&times;</button>' +
+        "</div>";
+    });
+    out += adding
+      ? '<input class="inline-input step-new" type="text" data-act="step-input" data-id="' + esc(t.id) +
+        '" placeholder="Type a step, then Enter" aria-label="New step">'
+      : '<button type="button" class="step-add" data-act="step-add" data-id="' + esc(t.id) + '">+ Add a step</button>';
+    return out + "</div>";
+  }
+
   function renderTasks(all, key, emptyCopy) {
     var shown = filters.hideDone ? all.filter(function (t) { return t.status !== "Done"; }) : all;
 
@@ -1676,19 +1987,22 @@
           (editing === "title"
             ? '<input class="inline-input inline-title" type="text" data-act="inline-input" data-field="title" data-id="' + esc(t.id) + '" value="' + esc(t.title) + '" aria-label="Task title">'
             : '<button type="button" class="title" data-act="inline-edit" data-field="title" data-id="' + esc(t.id) + '" title="Rename this task">' + esc(t.title) + "</button>") +
+          // Where it lives belongs directly under the title, before anything else.
+          (searchQuery.trim() ? taskHomeChip(t) : '') +
           (t.notes ? '<span class="notes-hint">Notes · hover or focus to read</span>' : '') +
-          (searchQuery.trim() ? '<span class="task-home">' + esc(taskHome(t)) + '</span>' : '') +
           (t.note ? '<span class="chip note">Waiting on: ' + esc(t.note) + "</span>" : "") +
         "</div>" +
+        stepsChip(t) +
         (editing === "dueDate"
           ? '<input class="inline-input inline-due" type="date" data-act="inline-input" data-field="dueDate" data-id="' + esc(t.id) + '" value="' + esc(t.dueDate) + '" aria-label="Due date for ' + esc(t.title) + '">'
           : t.dueDate
             ? '<button type="button" class="chip due' + (isOverdue(t.dueDate) && t.status !== "Done" ? " over" : "") + '" data-act="inline-edit" data-field="dueDate" data-id="' + esc(t.id) + '" title="Change the due date">Due ' + esc(fmtDate(t.dueDate)) + "</button>"
             : '<button type="button" class="chip due-add" data-act="inline-edit" data-field="dueDate" data-id="' + esc(t.id) + '" aria-label="Add a due date to ' + esc(t.title) + '">+ Due date</button>') +
-        '<button class="ghost" data-act="task-move" data-id="' + esc(t.id) + '" aria-label="Move ' + esc(t.title) + '">Move</button>' +
-        (t.notes ? '<button class="ghost touch-notes" data-act="task-notes" aria-expanded="false" aria-label="Notes for ' + esc(t.title) + '">Notes</button>' : '') +
-        itemActions("task", t.id, esc(t.title)) +
+        '<button class="ghost task-menu" data-act="task-menu" data-id="' + esc(t.id) + '" aria-label="Actions for ' + esc(t.title) + '" title="More actions">' +
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+          '<circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg></button>' +
         (t.notes ? '<div class="notes-preview">' + esc(t.notes) + '</div>' : '') +
+        stepsBlock(t) +
         "</div>";
     });
 
@@ -1748,6 +2062,7 @@
             '<button class="ghost" data-act="add-task" data-project="' + esc(p.id) + '" aria-label="Add task to this project">+ Task</button>' +
             '<button class="ghost" data-act="edit" data-kind="project" data-id="' + esc(p.id) + '">Edit</button>' +
             '<button class="ghost" data-act="delete" data-kind="project" data-id="' + esc(p.id) + '">Delete</button>' +
+            cardMenuButton("project", p.id, p.name) +
           "</div>" +
         "</div>" +
         (isClosed ? "" : renderTasks(tasks, "t:" + p.id, "")) +
@@ -1784,6 +2099,7 @@
           '<button class="ghost" data-act="add-project" data-client="' + esc(c.id) + '">+ Project</button>' +
           '<button class="ghost" data-act="edit" data-kind="client" data-id="' + esc(c.id) + '">Edit</button>' +
           '<button class="ghost" data-act="delete" data-kind="client" data-id="' + esc(c.id) + '">Delete</button>' +
+          cardMenuButton("client", c.id, c.name) +
         "</div>" +
       "</div>" +
       (isClosed ? "" : renderProjects(c)) +
@@ -1857,7 +2173,20 @@
       (od ? '<span class="sep" aria-hidden="true">·</span><span class="od">' + od + " overdue</span>" : "");
   }
 
+  /* Re-entrancy guard. Replacing the board's innerHTML detaches whatever had
+     focus, and the browser fires blur/focusout synchronously during that
+     teardown. A handler that commits and re-renders would then restart this
+     function mid-teardown, which throws and leaves the save unrun. The
+     outermost render is the one that finishes; nested calls are dropped
+     because it is about to redraw everything anyway. */
+  var rendering = false;
   function render() {
+    if (rendering) return;
+    rendering = true;
+    try { renderBoard(); } finally { rendering = false; }
+  }
+
+  function renderBoard() {
     renderFocus();
     var snapshot = JSON.stringify(serialize());
     if (historyBaseline === null) historyBaseline = snapshot;
@@ -2080,6 +2409,67 @@
 
     var first = form.querySelector("input, select, textarea");
     if (first) first.focus();
+  }
+
+  /* A short list of actions for a single item. Used where a row is too narrow
+     to carry them inline; the modal shell already handles Escape, focus and
+     touch, so the narrow case costs no new machinery. */
+  function openActions(opts) {
+    modalOpen = true;
+    var rows = opts.actions.map(function (a, i) {
+      return '<button type="button" class="action-row' + (a.danger ? " danger" : "") +
+        '" data-pick="' + i + '">' + esc(a.label) + "</button>";
+    }).join("");
+    $("modalHost").innerHTML = '<div class="backdrop" data-act="backdrop"><div class="modal sheet" role="dialog" aria-modal="true" aria-label="' +
+      esc(opts.title) + '"><h3>' + esc(opts.title) + "</h3>" +
+      '<div class="action-list">' + rows + "</div>" +
+      '<div class="actions"><button type="button" data-act="cancel">Cancel</button></div></div></div>';
+    $("modalHost").querySelectorAll("[data-pick]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var chosen = opts.actions[Number(btn.getAttribute("data-pick"))];
+        closeModal();
+        if (chosen && chosen.run) chosen.run();
+      });
+    });
+    var first = $("modalHost").querySelector(".action-row");
+    if (first) first.focus();
+  }
+
+  function cardMenuButton(kind, id, label) {
+    return '<button class="ghost card-menu" data-act="card-menu" data-kind="' + kind + '" data-id="' + esc(id) +
+      '" aria-label="Actions for ' + esc(label) + '" title="More actions">' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+      '<circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg></button>';
+  }
+
+  function cardMenu(kind, id) {
+    var item = kind === "client" ? byId(state.clients, id) : byId(state.projects, id);
+    if (!item) return;
+    var actions = [];
+    if (kind === "client") actions.push({ label: "Add a project", run: function () { addProject(id); } });
+    actions.push({ label: kind === "client" ? "Edit client" : "Edit project",
+      run: function () { editItem(kind, id); } });
+    actions.push({ label: kind === "client" ? "Delete client" : "Delete project", danger: true,
+      run: function () { deleteItem(kind, id); } });
+    openActions({ title: item.name, actions: actions });
+  }
+
+  function taskMenu(id, row) {
+    var task = byId(state.tasks, id);
+    if (!task) return;
+    var actions = [
+      { label: (task.steps && task.steps.length) ? "Add a step" : "Break into steps",
+        run: function () { beginStep(id); } },
+      { label: task.dueDate ? "Change the due date" : "Set a due date",
+        run: function () { startInlineEdit(id, "dueDate"); } },
+      { label: "Move to another project or client", run: function () { moveTasks([id]); } },
+      { label: "Edit details", run: function () { editItem("task", id); } }
+    ];
+    if (task.notes && row) {
+      actions.push({ label: "Show notes", run: function () { row.classList.add("notes-open"); } });
+    }
+    actions.push({ label: "Delete task", danger: true, run: function () { deleteItem("task", id); } });
+    openActions({ title: task.title, actions: actions });
   }
 
   function openConfirm(opts) {
@@ -2955,10 +3345,84 @@
     } catch(e) { if (!e || e.code !== "declined") toast("Couldn't download HTML in this view."); }
   }
 
+  var IMPORT_LIMIT = 8 * 1024 * 1024;        // a planner backup is never this big
+
+  function describeDoc(doc) {
+    function count(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+    return [count(doc.clients.length, "client"), count(doc.projects.length, "project"),
+      count(doc.tasks.length, "task"), count(doc.focusSessions.length, "focus session")].join(", ");
+  }
+
+  /* Reads a backup and, once confirmed, replaces the planner with it. Split
+     from the file plumbing so the decisions here are testable on their own.
+     Everything is validated before anything is replaced, so a bad file leaves
+     the planner untouched, and the swap goes through commit() so Undo reverses
+     the whole import in one step. */
+  function importBackup(text, filename) {
+    if (mode === "loading") { toast("Still loading — try the import again in a moment."); return false; }
+    if (modalOpen || draft || qaBusy || pendingRemote) { toast("Finish your current edits or sync before importing."); return false; }
+
+    var raw;
+    try { raw = JSON.parse(text); }
+    catch (e) { toast("That file isn't valid JSON."); return false; }
+
+    // The other JSON this app deals in is an array of draft actions; saying so
+    // beats a generic failure when someone picks the wrong file.
+    if (Array.isArray(raw)) { toast("That looks like a drafts file. Use “Paste drafts from chat” instead."); return false; }
+    if (!raw || typeof raw !== "object") { toast("That file doesn't hold a planner backup."); return false; }
+    if (!["clients", "projects", "tasks", "focusSessions"].some(function (key) { return Array.isArray(raw[key]); })) {
+      toast("That file doesn't hold a planner backup."); return false;
+    }
+
+    var fileVersion = Number.isFinite(raw.version) ? Number(raw.version) : 1;
+    var next = normalize(raw);                 // migrates, coerces, and drops nothing it can keep
+    var summary = describeDoc(next);
+    var ahead = fileVersion > SCHEMA_VERSION;
+
+    var body = (filename ? "“" + filename + "” holds " : "This backup holds ") + summary +
+      ". Importing replaces everything currently in this planner. Undo reverses it.";
+    if (ahead) {
+      body = "This backup was written by a newer build (format " + fileVersion + "; this one reads " +
+        SCHEMA_VERSION + "). Anything this build doesn't recognise is kept in the file but not shown " +
+        "or edited here. " + body;
+    }
+
+    openConfirm({
+      title: ahead ? "Import a newer backup?" : "Replace this planner?",
+      body: body,
+      confirmLabel: "Replace and import",
+      onConfirm: function () {
+        state = next;
+        selectedTasks.clear();
+        searchQuery = "";
+        scope = "all";
+        var box = $("taskSearch"); if (box) box.value = "";
+        commit();
+        toast("Imported " + summary + ". Use Undo to go back.");
+      }
+    });
+    return true;
+  }
+
+  function initImport() {
+    var input = $("importFile");
+    if (!input) return;
+    input.addEventListener("change", async function () {
+      var file = input.files && input.files[0];
+      input.value = "";                        // so the same file can be chosen twice running
+      if (!file) return;
+      if (file.size > IMPORT_LIMIT) { toast("That file is too large to be a planner backup."); return; }
+      var text;
+      try { text = await file.text(); }
+      catch (e) { toast("Couldn't read that file."); return; }
+      importBackup(text, file.name);
+    });
+  }
+
   async function exportBackup() {
     if (!downloadsNs && !standalone) return;
     var payload = {
-      version: 2,
+      version: SCHEMA_VERSION,
       focusSettings: state.focusSettings,
       focusRun: state.focusRun,
       focusSessions: state.focusSessions,
@@ -2984,6 +3448,19 @@
     }
   }
 
+  /* Where a result lives, carrying the client's own colour. In search the
+     nesting is gone, so this line is the only thing saying which client and
+     project a task belongs to - it has to be readable at a glance. */
+  function taskHomeChip(task) {
+    var project = byId(state.projects, task.projectId);
+    var client = byId(state.clients, project ? project.clientId : task.clientId);
+    var accent = client ? accentOf(client) : "";
+    return '<span class="task-home"' + (accent ? ' style="--hue:' + esc(accent) + '"' : '') + '>' +
+      '<span class="home-dot" aria-hidden="true"></span>' +
+      '<b>' + esc(client ? client.name : "Unassigned") + '</b>' +
+      (project ? '<span class="home-sep">/</span>' + esc(project.name) : "") + '</span>';
+  }
+
   function taskHome(task) {
     var project = byId(state.projects, task.projectId);
     var client = byId(state.clients, project ? project.clientId : task.clientId);
@@ -2998,7 +3475,9 @@
       if (scope !== "all" && cid !== scope) return false;
       if (!filters.showArchived && client && client.status === "Archived") return false;
       if (filters.hideDone && task.status === "Done") return false;
-      var text = [task.title, task.notes, task.note, taskHome(task)].join(" ").toLocaleLowerCase();
+      var text = [task.title, task.notes, task.note, taskHome(task)]
+        .concat((task.steps || []).map(function (x) { return x.text; }))
+        .join(" ").toLocaleLowerCase();
       return words.every(function (word) { return text.includes(word); });
     });
   }
@@ -3248,12 +3727,25 @@
     if (act === "task-notes") { var taskRow = el.closest("[data-task-id]"); var opened = taskRow.classList.toggle("notes-open"); el.setAttribute("aria-expanded", String(opened)); return; }
     if (act === "undo" || act === "redo") { recoverChange(act === "redo"); return; }
     if (act === "inline-edit") { startInlineEdit(el.getAttribute("data-id"), el.getAttribute("data-field")); return; }
+    if (act === "task-menu") { taskMenu(el.getAttribute("data-id"), el.closest("[data-task-id]")); return; }
+    if (act === "steps-toggle") { var stid = el.getAttribute("data-id"); openSteps(stid, !stepsOpen(stid)); render(); return; }
+    if (act === "step-add") { beginStep(el.getAttribute("data-id")); return; }
+    if (act === "step-remove") { removeStep(el.getAttribute("data-id"), el.getAttribute("data-step")); return; }
+    if (act === "step-edit") {
+      if (modalOpen || draft) return;
+      inlineEdit = { id: el.getAttribute("data-id"), field: "step", taskId: el.getAttribute("data-task") };
+      render();
+      var box = document.querySelector(".step-text");
+      if (box) { box.focus(); try { box.select(); } catch (e) {} }
+      return;
+    }
+    if (act === "card-menu") { cardMenu(el.getAttribute("data-kind"), el.getAttribute("data-id")); return; }
     if (act === "task-move") { moveTasks([el.getAttribute("data-id")]); return; }
     if (act === "bulk-move") { moveTasks(Array.from(selectedTasks)); return; }
     if (act === "bulk-delete") { deleteSelectedTasks(); return; }
     if (act === "selection-clear") { selectedTasks.clear(); render(); return; }
     if (act === "select-visible") { document.querySelectorAll("#board [data-task-id]").forEach(function (row) { selectedTasks.add(row.getAttribute("data-task-id")); }); render(); return; }
-    if (act === "search-clear") { searchQuery = ""; $("taskSearch").value = ""; selectedTasks.clear(); render(); $("taskSearch").focus(); return; }
+    if (act === "search-clear") { searchQuery = ""; $("taskSearch").value = ""; selectedTasks.clear(); syncCaptureForSearch(); render(); $("taskSearch").focus(); return; }
     if (act === "backdrop") { if (ev.target === el) closeModal(); return; }
     if (act === "cancel") { closeModal(); return; }
     if (act === "more") {
@@ -3297,6 +3789,7 @@
     if (act === "edit") { editItem(el.getAttribute("data-kind"), el.getAttribute("data-id")); return; }
     if (act === "delete") { deleteItem(el.getAttribute("data-kind"), el.getAttribute("data-id")); return; }
     if (act === "export") { exportBackup(); return; }
+    if (act === "import") { $("importFile").click(); return; }
     if (act === "paste-drafts") { $("pastePanel").open = true; $("draftJson").focus(); return; }
     if (act === "load-drafts") { loadChatDrafts(); return; }
     if (act === "context-save") { saveContext(); return; }
@@ -3329,6 +3822,10 @@
         setStatus(el.getAttribute("data-kind"), el.getAttribute("data-id"), el.value);
         return;
       }
+      if (act === "step-toggle") {
+        setStepDone(el.getAttribute("data-id"), el.getAttribute("data-step"), el.checked);
+        return;
+      }
       if (act === "inline-input" && el.getAttribute("data-field") === "dueDate") {
         commitInlineEdit(el.getAttribute("data-id"), "dueDate", el.value);
         return;
@@ -3354,7 +3851,7 @@
   });
 
   document.addEventListener("input", function (ev) {
-    if (ev.target === $("taskSearch")) { searchQuery = ev.target.value; selectedTasks.clear(); render(); return; }
+    if (ev.target === $("taskSearch")) { searchQuery = ev.target.value; selectedTasks.clear(); syncCaptureForSearch(); render(); return; }
     if (ev.target === $("contextInput")) { $("contextStatus").textContent = "Unsaved changes; current text will be used in your next drafting request."; return; }
     if (ev.target.getAttribute("data-act") === "d-note") { var noteRow = draftRow(ev.target.getAttribute("data-key")); if (noteRow) noteRow.note = ev.target.value; return; }
     var el = ev.target.closest ? ev.target.closest('[data-act="d-name"]') : null;
@@ -3374,12 +3871,49 @@
      commitInlineEdit clears the state first and re-entry is a no-op. */
   document.addEventListener("focusout", function (ev) {
     var el = ev.target;
-    if (!el || !el.getAttribute || el.getAttribute("data-act") !== "inline-input") return;
+    if (!el || !el.getAttribute) return;
+    /* A commit re-renders, which detaches whatever had focus and fires this
+       event on the orphan. That node's value has already been handled by
+       whoever caused the re-render, so acting on it would double-apply the
+       edit and re-enter render() while it is still running. */
+    if (el.isConnected === false) return;
+    var act = el.getAttribute("data-act");
+    if (act === "step-input") {
+      var pending = String(el.value || "").trim();
+      var owner = el.getAttribute("data-id");
+      stepInput = null;
+      if (pending) addStep(owner, pending); else render();
+      return;
+    }
+    if (act !== "inline-input") return;
+    if (el.getAttribute("data-field") === "step") {
+      var step = el.getAttribute("data-id"), task = el.getAttribute("data-task");
+      inlineEdit = null;
+      renameStep(task, step, el.value);
+      return;
+    }
     commitInlineEdit(el.getAttribute("data-id"), el.getAttribute("data-field"), el.value);
   });
 
   document.addEventListener("keydown", function (ev) {
     var el = ev.target;
+    if (el && el.getAttribute && el.getAttribute("data-act") === "step-input") {
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); stepInput = null; render(); return; }
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        var owner = el.getAttribute("data-id");
+        var text = String(el.value || "");
+        /* Committing re-renders, which detaches this input while it still has
+           focus and fires focusout on the detached node. Blanking it first
+           means that stray event has nothing left to add a second time. */
+        el.value = "";
+        if (!text.trim()) { stepInput = null; render(); return; }
+        if (addStep(owner, text)) { stepInput = owner; render(); }
+        var next = document.querySelector(".step-new");
+        if (next) next.focus();
+        return;
+      }
+    }
     if (el && el.getAttribute && el.getAttribute("data-act") === "inline-input") {
       if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cancelInlineEdit(); return; }
       // Blurring lets the focusout handler above do the single commit.
@@ -3885,7 +4419,12 @@
     var out="";
     rows.forEach(function (row) {
       var s=row.session, a=s.assignment;
-      out+='<article class="focus-entry"><div><strong>'+esc(focusAssignmentTitle(a))+'</strong><span class="focus-entry-meta">'+esc([a.clientName,a.projectName].filter(Boolean).join(" / ") || "No project")+' · '+esc(new Date(s.startedAt).toLocaleString(undefined,{weekday:"short",hour:"2-digit",minute:"2-digit"}))+'</span>'+(s.note ? '<p>'+esc(s.note)+'</p>' : '<p class="help">Add a note for your timesheet.</p>')+'</div><div class="focus-entry-side"><b>'+esc(focusDuration(row.ms))+'</b><button class="ghost" data-act="focus-edit" data-id="'+esc(s.id)+'">Edit details</button></div></article>';
+      // The heading already shows the deepest thing the session was attached
+      // to, so the path beneath it leaves that part out rather than repeating it.
+      var title=focusAssignmentTitle(a);
+      var path=[a.clientName,a.projectName].filter(Boolean).filter(function (part) { return part !== title; }).join(" / ");
+      var when=new Date(s.startedAt).toLocaleString(undefined,{weekday:"short",hour:"2-digit",minute:"2-digit"});
+      out+='<article class="focus-entry"><div><strong>'+esc(title)+'</strong><span class="focus-entry-meta">'+esc(path ? path+" · "+when : when)+'</span>'+(s.note ? '<p>'+esc(s.note)+'</p>' : '<p class="help">Add a note for your timesheet.</p>')+'</div><div class="focus-entry-side"><b>'+esc(focusDuration(row.ms))+'</b><button class="ghost" data-act="focus-edit" data-id="'+esc(s.id)+'">Edit details</button></div></article>';
     });
     $("focusLogEntries").innerHTML=out || '<p class="focus-empty">Your focused work will appear here. Run the timer, or add a session manually if you worked without it. Attach a client, project, task or note to make Friday’s timesheet easier.</p>';
   }
@@ -3986,6 +4525,7 @@
   initTheme();
   initSidebar();
   initContext();
+  initImport();
   initLayout();
   render();
   setSaveStatus("busy", "Loading…");
