@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -224,7 +224,7 @@ test('a manual focus session is recorded like a timed one, on the right local da
  a.capture();a.addFocusSession();
  // fields come from the vm realm, so compare their shape as text
  assert.equal(Array.from(ctx.form.fields,f=>`${f.key}:${f.type||'text'}${f.required?'*':''}`).join(' '),
-  'date:date* minutes:number* target:select note:textarea');
+  'date:date* minutes:duration* target:select note:textarea');
  ctx.form.onSubmit({date:'2026-09-17',minutes:'45',target:'t:t1',note:'Drafting'});
  const s=a.state().focusSessions[0];
  assert.equal(s.durationMs,45*60000);
@@ -561,4 +561,74 @@ test('archived clients only appear in the list when the filter allows them',()=>
  assert.doesNotMatch(a.navHTML(),/navmore/);        // five visible, so no expander
  a.setFilters({hideDone:true,showArchived:true}); a.renderNav();
  assert.match(a.navHTML(),/Show 1 more/);
+});
+
+/* ---- a recorded session's time can be corrected after the fact ---- */
+const oneSession=(mins,startedAt)=>{
+ const start=Date.parse(startedAt);
+ return {clients:[{id:'c1',name:'Alpha'}],projects:[],tasks:[],focusSettings:null,focusRun:null,
+  focusSessions:[{id:'f1',runId:'r1',assignment:{clientId:'c1',clientName:'Alpha',taskId:'',taskTitle:'',projectId:'',projectName:''},
+   note:'Original note',outcome:'completed',
+   intervals:[{start:start,end:start+mins*60000/2},{start:start+mins*60000/2+600000,end:start+mins*60000+600000}]}]};
+};
+
+test('editing a session rewrites its recorded time and what it contributes to the week',()=>{
+ const {a,ctx}=app();
+ a.setState(oneSession(60,'2026-09-22T09:00:00'));
+ const s=()=>a.state().focusSessions[0];
+ assert.equal(s().durationMs,60*60000);
+ a.capture(); a.editFocusSession('f1');
+ // the dialog offers the current length, in minutes, for the duration field
+ assert.equal(ctx.form.fields[0].key,'minutes');
+ assert.equal(ctx.form.fields[0].type,'duration');
+ assert.equal(ctx.form.fields[0].value,60);
+ ctx.form.onSubmit({minutes:'95',target:'c:c1',note:'Corrected'});
+ assert.equal(s().durationMs,95*60000);
+ assert.equal(s().note,'Corrected');
+ // the week total follows the correction
+ const week=a.weekBounds(0,Date.parse('2026-09-22T12:00:00'));
+ assert.equal(a.focusWeekSessions(week)[0].ms,95*60000);
+});
+test('a retimed session keeps its start, so it stays in the same week',()=>{
+ const {a}=app();
+ a.setState(oneSession(30,'2026-09-22T09:00:00'));
+ const before=a.state().focusSessions[0].intervals[0].start;
+ assert.equal(a.setSessionMinutes(a.state().focusSessions[0],120),true);
+ const s=a.state().focusSessions[0];
+ assert.equal(s.intervals[0].start,before);
+ assert.equal(s.intervals.length,1);                       // the pause structure is gone
+ assert.equal(s.intervals[0].end-s.intervals[0].start,120*60000);
+ assert.equal(Date.parse(s.endedAt),s.intervals[0].end);   // endedAt follows
+ assert.equal(s.durationMs,120*60000);
+});
+test('a retimed session survives normalize unchanged',()=>{
+ const {a}=app();
+ a.setState(oneSession(30,'2026-09-22T09:00:00'));
+ a.setSessionMinutes(a.state().focusSessions[0],45);
+ const once=JSON.stringify(a.serialize());
+ a.setState(JSON.parse(once));
+ assert.equal(JSON.stringify(a.serialize()),once);
+ assert.equal(a.state().focusSessions[0].durationMs,45*60000);
+});
+test('a length that is not a positive number leaves the session alone',()=>{
+ const {a}=app();
+ a.setState(oneSession(30,'2026-09-22T09:00:00'));
+ const s=()=>a.state().focusSessions[0];
+ for (const bad of [0,-5,'abc',null,undefined,NaN]) {
+  assert.equal(a.setSessionMinutes(s(),bad),false,String(bad));
+  assert.equal(s().durationMs,30*60000);
+ }
+ assert.equal(a.setSessionMinutes(s(),30),false);          // unchanged is not a rewrite
+ assert.equal(a.setSessionMinutes(s(),5000),true);         // and it is capped at a day
+ assert.equal(s().durationMs,1440*60000);
+});
+test('the duration field reads hours and minutes back as one total',()=>{
+ const {a,ctx,element}=app();
+ a.setState(oneSession(30,'2026-09-22T09:00:00'));
+ a.capture(); a.editFocusSession('f1');
+ // 0h30 today; the dialog seeds each box from the total
+ assert.equal(ctx.form.fields[0].value,30);
+ a.setState(oneSession(135,'2026-09-22T09:00:00'));
+ a.editFocusSession('f1');
+ assert.equal(ctx.form.fields[0].value,135);               // 2h15, split by the renderer
 });

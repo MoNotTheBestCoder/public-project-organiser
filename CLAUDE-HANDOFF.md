@@ -49,6 +49,8 @@ Assignments are snapshots of IDs and display names, preserving history if live r
 
 Weekly logs use local Monday-to-Monday boundaries. CSV/Markdown and Copy week include only work inside that selected week; intervals crossing boundaries are clipped. CSV timestamps are UTC with timezone metadata, and formula-like text is escaped. Keep exact measured intervals rather than rounding stored durations.
 
+A logged session's recorded time is editable (`setSessionMinutes`). Doing so collapses its intervals to one span from the original start: the pause structure was a measurement, and once the total is overridden it no longer describes anything real. The start is preserved so the session stays in the week it belongs to, and `durationMs` and `endedAt` are kept consistent with the new span. Lengths are capped at a day and a non-positive value changes nothing.
+
 ## Floating clock
 
 `openFocusPopout` tries Document Picture-in-Picture on a user click, then offers a normal popup fallback if unavailable. Browser permissions, sandbox policy, and window sizing vary. Normal popup windows do not promise always-on-top behavior. Keep the main tab open; closing/reloading it closes the child, while closing the child alone leaves the timer running.

@@ -430,6 +430,10 @@
   .field { margin-bottom: 15px; }
   .field label { display: block; font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
   .field .fhelp { font-size: 13.5px; color: var(--ink-3); margin-top: 6px; }
+  .duration-field { display: flex; gap: 10px; }
+  .dur-part { display: flex; align-items: baseline; gap: 7px; flex: 1 1 0; min-width: 0; }
+  .dur-part input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+  .dur-part label { flex: none; font-size: 13.5px; color: var(--ink-2); margin: 0; }
   .field .ferr { font-size: 13.5px; color: var(--danger); margin-top: 6px; }
   .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
@@ -2413,6 +2417,19 @@
           (f.min == null ? "" : ' min="' + esc(f.min) + '"') +
           (f.max == null ? "" : ' max="' + esc(f.max) + '"') +
           ' step="' + esc(f.step == null ? 1 : f.step) + '" inputmode="numeric">';
+      } else if (f.type === "duration") {
+        /* Two number inputs backed by datalists: the arrow offers whole hours
+           and five-minute steps to pick from, and the same box accepts a typed
+           number for anything in between. One control, both habits. */
+        var total = Math.max(0, Number(f.value) || 0);
+        body += '<div class="duration-field">' +
+          '<span class="dur-part"><input type="number" id="f_' + esc(f.key) + '_h" value="' + Math.floor(total / 60) +
+            '" min="0" max="24" step="1" list="durationHours" inputmode="numeric" aria-label="Hours">' +
+            '<label for="f_' + esc(f.key) + '_h">hours</label></span>' +
+          '<span class="dur-part"><input type="number" id="f_' + esc(f.key) + '_m" value="' + (total % 60) +
+            '" min="0" max="59" step="5" list="durationMinutes" inputmode="numeric" aria-label="Minutes">' +
+            '<label for="f_' + esc(f.key) + '_m">min</label></span>' +
+          "</div>";
       } else if (f.type === "textarea") {
         body += '<textarea id="f_' + esc(f.key) + '" placeholder="' + esc(f.placeholder || "") + '">' + esc(f.value || "") + "</textarea>";
       } else {
@@ -2423,10 +2440,23 @@
       body += '<p class="ferr hidden"></p></div>';
     });
 
+    var lists = "";
+    if (opts.fields.some(function (f) { return f.type === "duration"; })) {
+      lists = '<datalist id="durationHours">' +
+        [0,1,2,3,4,5,6,7,8].map(function (h) { return '<option value="' + h + '">'; }).join("") + "</datalist>" +
+        '<datalist id="durationMinutes">' +
+        [0,5,10,15,20,25,30,35,40,45,50,55].map(function (m) { return '<option value="' + m + '">'; }).join("") + "</datalist>";
+    }
+
     $("modalHost").innerHTML = '<div class="backdrop" data-act="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="' +
       esc(opts.title) + '"><h3>' + esc(opts.title) + "</h3>" +
       (opts.body ? '<p class="mbody">' + esc(opts.body) + "</p>" : "") +
-      '<form id="modalForm">' + body +
+      /* novalidate: openForm runs its own required-field checks and shows them
+         inline. Native validation only duplicated that, and its step rule
+         rejected a typed 37 against a 5-minute step — silently refusing to
+         submit a value the field is meant to accept. The step still drives the
+         spinner; it no longer decides what is allowed. */
+      '<form id="modalForm" novalidate>' + lists + body +
       '<div class="actions"><button type="button" data-act="cancel">Cancel</button>' +
       '<button type="submit" class="primary">' + esc(opts.submitLabel || "Save") + "</button></div></form></div></div>";
 
@@ -2437,8 +2467,17 @@
       var values = {};
       var ok = true;
       opts.fields.forEach(function (f) {
-        var el = $("f_" + f.key);
-        var v = el ? String(el.value || "").trim() : "";
+        var v;
+        if (f.type === "duration") {
+          var hEl = $("f_" + f.key + "_h"), mEl = $("f_" + f.key + "_m");
+          var hours = Math.max(0, Math.floor(Number(hEl && hEl.value) || 0));
+          var mins = Math.max(0, Math.floor(Number(mEl && mEl.value) || 0));
+          var totalMins = hours * 60 + mins;
+          v = totalMins > 0 ? String(totalMins) : "";     // empty reads as "not given"
+        } else {
+          var el = $("f_" + f.key);
+          v = el ? String(el.value || "").trim() : "";
+        }
         values[f.key] = v;
         var wrap = form.querySelector('[data-field="' + f.key + '"]');
         var err = wrap ? wrap.querySelector(".ferr") : null;
@@ -4499,12 +4538,30 @@
   /* Logging work done without the timer. The record it produces goes through
      the same normalizer as a timed session, so the weekly log and the CSV and
      Markdown exports need to know nothing about where it came from. */
+  /* Changes how long a session records, keeping where it sits in the week.
+     The intervals become one span from the original start, which is the honest
+     shape for a figure the user typed: the pause structure was a measurement,
+     and once the total is overridden it no longer describes anything real. */
+  function setSessionMinutes(session, minutes) {
+    var total = Math.floor(Number(minutes) || 0);
+    if (!Number.isFinite(total) || total <= 0) return false;
+    total = Math.min(total, 1440);
+    if (total * 60000 === session.durationMs) return false;
+    var start = session.intervals.length ? session.intervals[0].start : Date.parse(session.startedAt);
+    if (!Number.isFinite(start)) return false;
+    session.intervals = [{ start: start, end: start + total * 60000 }];
+    session.durationMs = total * 60000;
+    session.endedAt = new Date(start + total * 60000).toISOString();
+    return true;
+  }
+
   function addFocusSession() {
     openForm({title:"Add a focus session",submitLabel:"Add session",
       body:"For focused work you did without running the timer.",fields:[
       {key:"date",label:"Date",type:"date",required:true,value:todayISO()},
-      {key:"minutes",label:"Minutes focused",type:"number",required:true,min:1,max:1440,step:1,value:"30",
-        help:"Focused time only, the same as the timer records — leave out breaks and pauses."},
+      {key:"minutes",label:"Time focused",type:"duration",required:true,value:30,
+        requiredMsg:"Enter how long you focused.",
+        help:"Pick from the list or type your own. Focused time only, the same as the timer records — leave out breaks and pauses."},
       {key:"target",label:"Client, project or task",type:"select",options:focusTaskOptions(focusAssignment(null))},
       {key:"note",label:"What did you work on?",type:"textarea",placeholder:"Goes straight into your weekly log"}
     ],onSubmit:function (v) {
@@ -4532,14 +4589,23 @@
 
   function editFocusSession(id) {
     var session=byId(state.focusSessions,id); if (!session) return;
-    openForm({title:"Focus session details",submitLabel:"Save details",body:focusDuration(session.durationMs)+" focused work. Recorded time stays unchanged.",fields:[
+    var started=new Date(session.startedAt);
+    openForm({title:"Focus session details",submitLabel:"Save details",
+      body:"Started "+(isNaN(started) ? "earlier" : started.toLocaleString(undefined,{weekday:"long",hour:"2-digit",minute:"2-digit"}))+". Changing the time rewrites what this session contributes to your week.",
+      fields:[
+      {key:"minutes",label:"Time focused",type:"duration",required:true,
+        value:Math.round(session.durationMs/60000),
+        requiredMsg:"A session needs a length.",
+        help:"Measured by the timer unless you change it. Editing replaces the measurement."},
       {key:"target",label:"Client, project or task",type:"select",options:focusTaskOptions(session.assignment)},
       {key:"note",label:"What did you work on?",type:"textarea",value:session.note}
     ],onSubmit:function(v) {
       var current=byId(state.focusSessions,id); if (!current) {toast("That session is no longer available.");return;}
       var target=v.target == null ? (v.taskId ? "t:"+v.taskId : "") : v.target;
       if(target !== focusTargetValue(current.assignment)){var next=focusTargetAssignment(target);if(!next){toast("That assignment is no longer available. Reopen details and choose another.");return;}current.assignment=next;}
-      current.note=v.note.slice(0,4000); persistFocus(); toast("Session details saved.");
+      var retimed=setSessionMinutes(current,v.minutes);
+      current.note=v.note.slice(0,4000); persistFocus();
+      toast(retimed ? "Session saved as "+focusDuration(current.durationMs)+"." : "Session details saved.");
     }});
   }
   async function copyFocusWeek() {
