@@ -7,7 +7,7 @@ function app() {
   let code=fs.readFileSync('project-planner-1.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1];
   code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
     globalThis.api={makePlannerDrag,validPlannerDrop,applyPlannerDrop,renderTasks,renderProjects,renderClient,renderNav,recoverChange,serialize,
-      visibleClients,dropEdgeFor:(t,y,p)=>dropEdgeFor(t,y,p),
+      visibleClients,dropEdgeFor:(t,y,p)=>dropEdgeFor(t,y,p),scope:()=>scope,setScope:x=>scope=x,page:()=>workspacePage,setPage:x=>workspacePage=x,
       setStatus,nextOrderFor,findDropTarget,dropEdgeFor,setSearch:x=>searchQuery=x,
       state:()=>state,select:ids=>selectedTasks=new Set(ids),undoCount:()=>undoStack.length,
       setState:x=>{state=normalize(x);historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];},
@@ -17,7 +17,7 @@ function app() {
   const elements={},data=new Map(),listeners={};
   const element=id=>elements[id]??={value:'',textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},addEventListener(){},querySelector(){return element('child')}};
   const ctx={console,URLSearchParams,location:{search:''},Intl,Date,AbortController,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},navigator:{},document:{getElementById:element,addEventListener:(type,fn)=>listeners[type]=fn,querySelector:()=>element('save'),querySelectorAll:()=>[],body:element('body')}};
-  ctx.window=ctx;ctx.crypto=require('node:crypto').webcrypto;
+  ctx.window=ctx;ctx.scrollTo=()=>{};ctx.crypto=require('node:crypto').webcrypto;
   vm.createContext(ctx);vm.runInContext(code,ctx);ctx.api.setup();
   ctx.api.setState({clients:[{id:'c1',name:'Alpha'},{id:'c2',name:'Beta'}],projects:[{id:'p1',clientId:'c1',name:'Report'},{id:'p2',clientId:'c2',name:'Delivery'}],tasks:[{id:'t1',title:'Write report',projectId:'p1',clientId:'c1'},{id:'t2',title:'Write report',projectId:'p1',clientId:'c1'},{id:'t3',title:'Follow up',clientId:'c1'}]});
   return {a:ctx.api,ctx,data,listeners,element};
@@ -114,6 +114,25 @@ test('a row target inserts before or after, taking the midpoint of its neighbour
   assert.equal(a.state().tasks.find(t=>t.id==='t3').projectId,'p1');   // and re-owned
   assert(a.applyPlannerDrop(a.makePlannerDrag('task','t3'),'t:t1','before'));
   assert.equal(order('t3'),0);                                   // a fresh gap past the first
+});
+test('Project planner is the way home: it always lands on every client',()=>{
+  const {a,listeners}=app();
+  const click=attrs=>listeners.click({target:{closest:()=>({getAttribute:k=>attrs[k]==null?null:attrs[k]})}});
+  // looking at one client, then pressing Project planner
+  a.setScope('c2');
+  click({'data-act':'workspace','data-page':'planner'});
+  assert.equal(a.scope(),'all','Project planner kept the client that was picked');
+  assert.equal(a.page(),'planner');
+  // the same from the Focus page, with a client still picked underneath
+  a.setScope('c1');a.setPage('focus');
+  click({'data-act':'workspace','data-page':'planner'});
+  assert.equal(a.scope(),'all');
+  assert.equal(a.page(),'planner');
+  // going to Focus leaves the client choice alone: only the planner is home
+  a.setScope('c1');
+  click({'data-act':'workspace','data-page':'focus'});
+  assert.equal(a.scope(),'c1');
+  assert.equal(a.page(),'focus');
 });
 test('client cards reorder by dragging, and the sidebar keeps its own busiest-first order',()=>{
   const {a}=app();

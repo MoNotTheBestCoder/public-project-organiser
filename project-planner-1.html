@@ -4086,6 +4086,13 @@
     if (act === "workspace") {
       workspacePage=el.getAttribute("data-page") === "focus" ? "focus" : "planner";
       if (workspacePage === "focus") $("focusPanel").open=true;
+      /* "Project planner" is the way home: it always lands on every client,
+         not on whichever one was last picked in the sidebar. Picking a client
+         is what the client list is for. */
+      if (workspacePage === "planner" && scope !== "all") {
+        scope="all"; selectedTasks.clear();
+        try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) { window.scrollTo(0, 0); }
+      }
       persistLayout(); render();
       closeSidebarDrawer(true);
       return;
