@@ -693,10 +693,13 @@ test('editing a session rewrites its recorded time and what it contributes to th
  const s=()=>a.state().focusSessions[0];
  assert.equal(s().durationMs,60*60000);
  a.capture(); a.editFocusSession('f1');
- // the dialog offers the current length, in minutes, for the duration field
- assert.equal(ctx.form.fields[0].key,'minutes');
- assert.equal(ctx.form.fields[0].type,'duration');
- assert.equal(ctx.form.fields[0].value,60);
+ // the dialog offers the current length, in minutes, for the duration field.
+ // By key, not position: the field order is a layout decision, not a contract.
+ const field=k=>ctx.form.fields.find(f=>f.key===k);
+ assert.equal(field('minutes').type,'duration');
+ assert.equal(field('minutes').value,60);
+ assert.equal(field('date').type,'date');
+ assert.equal(field('date').value,'2026-09-22');
  ctx.form.onSubmit({minutes:'95',target:'c:c1',note:'Corrected'});
  assert.equal(s().durationMs,95*60000);
  assert.equal(s().note,'Corrected');
@@ -737,13 +740,60 @@ test('a length that is not a positive number leaves the session alone',()=>{
  assert.equal(a.setSessionMinutes(s(),5000),true);         // and it is capped at a day
  assert.equal(s().durationMs,1440*60000);
 });
+test('a logged session can be moved to another day, keeping its clock time and its parts',()=>{
+ const {a,ctx}=app();
+ a.setState(oneSession(60,'2026-09-22T09:00:00'));
+ const s=()=>a.state().focusSessions[0];
+ const parts=s().intervals.length;
+ assert.equal(parts,2);                                    // a timer run, with a pause in it
+ a.capture(); a.editFocusSession('f1');
+ ctx.form.onSubmit({date:'2026-09-18',minutes:'60',target:'c:c1',note:'Original note'});
+ const start=new Date(s().intervals[0].start);
+ assert.equal(start.getFullYear()+'-'+String(start.getMonth()+1).padStart(2,'0')+'-'+String(start.getDate()).padStart(2,'0'),'2026-09-18');
+ assert.equal(start.getHours(),9);                         // the clock time comes along
+ assert.equal(start.getMinutes(),0);
+ assert.equal(s().durationMs,60*60000);                    // and the measurement is untouched
+ assert.equal(s().intervals.length,parts,'the pause was collapsed away');
+ assert.equal(s().intervals[1].start-s().intervals[0].end,600000);   // the gap is preserved
+ assert.equal(Date.parse(s().startedAt),s().intervals[0].start);
+ assert.equal(Date.parse(s().endedAt),s().intervals[1].end);
+ assert.match(a.lastToast(),/moved to/);
+});
+test('moving a session and retiming it in one edit does both, from the new day',()=>{
+ const {a,ctx}=app();
+ a.setState(oneSession(60,'2026-09-22T09:00:00'));
+ const s=()=>a.state().focusSessions[0];
+ a.capture(); a.editFocusSession('f1');
+ ctx.form.onSubmit({date:'2026-09-15',minutes:'25',target:'c:c1',note:'Original note'});
+ const start=new Date(s().intervals[0].start);
+ assert.equal(start.getDate(),15);
+ assert.equal(start.getHours(),9);                         // retimed from the moved start, not the old one
+ assert.equal(s().durationMs,25*60000);
+ assert.equal(s().intervals.length,1);                     // a retime does collapse to one span
+ assert.equal(s().intervals[0].end-s().intervals[0].start,25*60000);
+});
+test('a malformed or absent date leaves the session where it is',()=>{
+ const {a,ctx}=app();
+ a.setState(oneSession(60,'2026-09-22T09:00:00'));
+ const s=()=>a.state().focusSessions[0];
+ const before=s().startedAt;
+ a.capture(); a.editFocusSession('f1');
+ ctx.form.onSubmit({date:'22/09/2026',minutes:'60',target:'c:c1',note:'Original note'});
+ assert.equal(s().startedAt,before);                       // refused outright
+ assert.match(a.lastToast(),/YYYY-MM-DD/);
+ a.editFocusSession('f1');
+ ctx.form.onSubmit({minutes:'45',target:'c:c1',note:'Original note'});   // no date supplied at all
+ assert.equal(new Date(s().intervals[0].start).getDate(),22);            // day untouched
+ assert.equal(s().durationMs,45*60000);                                  // the rest still applies
+});
 test('the duration field reads hours and minutes back as one total',()=>{
  const {a,ctx,element}=app();
  a.setState(oneSession(30,'2026-09-22T09:00:00'));
  a.capture(); a.editFocusSession('f1');
+ const field=k=>ctx.form.fields.find(f=>f.key===k);
  // 0h30 today; the dialog seeds each box from the total
- assert.equal(ctx.form.fields[0].value,30);
+ assert.equal(field('minutes').value,30);
  a.setState(oneSession(135,'2026-09-22T09:00:00'));
  a.editFocusSession('f1');
- assert.equal(ctx.form.fields[0].value,135);               // 2h15, split by the renderer
+ assert.equal(field('minutes').value,135);                 // 2h15, split by the renderer
 });

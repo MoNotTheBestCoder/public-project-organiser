@@ -1057,12 +1057,15 @@
     return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
 
-  function todayISO() {
-    var d = new Date();
-    var m = String(d.getMonth() + 1).padStart(2, "0");
-    var day = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + m + "-" + day;
+  /* A date input speaks the local calendar, never UTC: an ISO timestamp sliced
+     at 10 characters lands on the day before, west of Greenwich. */
+  function isoDate(when) {
+    var d = when instanceof Date ? when : new Date(when);
+    if (isNaN(d.getTime())) return "";
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
   }
+  function todayISO() { return isoDate(new Date()); }
 
   function fmtDate(iso) {
     if (!iso) return "";
@@ -4689,8 +4692,7 @@
     return (state.focusSessions || []).map(function (s) { return {session:s,ms:s.intervals.reduce(function (sum,x) {return sum+Math.max(0,Math.min(x.end,range.end)-Math.max(x.start,range.start));},0)}; }).filter(function (x) {return x.ms>0;}).sort(function (a,b) {return b.session.startedAt.localeCompare(a.session.startedAt);});
   }
   function focusLogExport(format, range) {
-    function date(ms) {var d=new Date(ms);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
-    var rows=focusWeekSessions(range),week=date(range.start),zone=Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+    var rows=focusWeekSessions(range),week=isoDate(range.start),zone=Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
     var entries=rows.map(function(row){var s=row.session,a=s.assignment,spans=s.intervals.filter(function(x){return x.end>range.start && x.start<range.end;});
       return [s.id,a.clientName,a.projectName,a.taskTitle,s.note,new Date(Math.max(spans[0].start,range.start)).toISOString(),new Date(Math.min(spans[spans.length-1].end,range.end)).toISOString(),String(row.ms/1000),(row.ms/60000).toFixed(6),zone];});
     if(format === "csv") {
@@ -4699,7 +4701,7 @@
       return {filename:"focus-log-"+week+".csv",mime:"text/csv;charset=utf-8",text:"\uFEFF"+csv+"\r\n"};
     }
     function md(value) {return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\/g,'\\\\').replace(/\|/g,'\\|').replace(/\r?\n/g,'<br>');}
-    var text="# Focus log · "+week+" to "+date(range.end-1)+"\n\nWeek timezone: "+zone+". Times below are UTC.\n\nTotal focused time: **"+focusDuration(rows.reduce(function(n,r){return n+r.ms;},0))+"**. Pauses and breaks excluded.\n\n| Client | Project | Task | Notes | Start (UTC) | End (UTC) | Focused minutes |\n| --- | --- | --- | --- | --- | --- | ---: |\n";
+    var text="# Focus log · "+week+" to "+isoDate(range.end-1)+"\n\nWeek timezone: "+zone+". Times below are UTC.\n\nTotal focused time: **"+focusDuration(rows.reduce(function(n,r){return n+r.ms;},0))+"**. Pauses and breaks excluded.\n\n| Client | Project | Task | Notes | Start (UTC) | End (UTC) | Focused minutes |\n| --- | --- | --- | --- | --- | --- | ---: |\n";
     text+=entries.map(function(e){return '| '+[e[1],e[2],e[3],e[4],e[5],e[6],e[8]].map(md).join(' | ')+' |';}).join('\n');
     if(!rows.length)text+='\nNo focus blocks recorded for this week.';
     return {filename:"focus-log-"+week+".md",mime:"text/markdown;charset=utf-8",text:text+'\n'};
@@ -4770,6 +4772,30 @@
     return true;
   }
 
+  /* Moves a logged session to another day, keeping its clock time. A timer-run
+     session can hold several intervals, so they all shift by the same delta
+     rather than being collapsed: changing the date must not quietly rewrite
+     what the timer measured. */
+  function setSessionDate(session, dateISO) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO || ""))) return false;
+    var first = session.intervals.length ? session.intervals[0].start : Date.parse(session.startedAt);
+    if (!Number.isFinite(first)) return false;
+    var parts = String(dateISO).split("-");
+    var moved = new Date(first);
+    // All three at once, so the 31st moving into a 30-day month cannot roll over.
+    moved.setFullYear(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    var delta = moved.getTime() - first;
+    if (!delta || !Number.isFinite(delta)) return false;
+    session.intervals = session.intervals.map(function (span) {
+      return { start: span.start + delta, end: span.end + delta };
+    });
+    if (session.intervals.length) {
+      session.startedAt = new Date(session.intervals[0].start).toISOString();
+      session.endedAt = new Date(session.intervals[session.intervals.length - 1].end).toISOString();
+    }
+    return true;
+  }
+
   function addFocusSession() {
     openForm({title:"Add a focus session",submitLabel:"Add session",
       body:"For focused work you did without running the timer.",fields:[
@@ -4810,6 +4836,9 @@
     openForm({title:"Focus session details",submitLabel:"Save details",
       body:"Started "+(isNaN(started) ? "earlier" : started.toLocaleString(undefined,{weekday:"long",hour:"2-digit",minute:"2-digit"}))+". Changing the time rewrites what this session contributes to your week.",
       fields:[
+      {key:"date",label:"Date",type:"date",required:true,value:isoDate(Date.parse(session.startedAt)),
+        requiredMsg:"A session needs a date.",
+        help:"Moving it keeps the time of day, and moves what it contributes to that week."},
       {key:"minutes",label:"Time focused",type:"duration",required:true,
         value:Math.round(session.durationMs/60000),
         requiredMsg:"A session needs a length.",
@@ -4820,9 +4849,21 @@
       var current=byId(state.focusSessions,id); if (!current) {toast("That session is no longer available.");return;}
       var target=v.target == null ? (v.taskId ? "t:"+v.taskId : "") : v.target;
       if(target !== focusTargetValue(current.assignment)){var next=focusTargetAssignment(target);if(!next){toast("That assignment is no longer available. Reopen details and choose another.");return;}current.assignment=next;}
+      /* A date that is not supplied at all means "leave the day alone", the
+         same reading `target` already gets. openForm always supplies every
+         field, so only a malformed value is worth refusing. */
+      if(v.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(v.date)){toast("Enter the date as YYYY-MM-DD.");return;}
+      // Date first: setSessionMinutes measures from the session's own start.
+      var moved=v.date ? setSessionDate(current,v.date) : false;
       var retimed=setSessionMinutes(current,v.minutes);
-      current.note=v.note.slice(0,4000); persistFocus();
-      toast(retimed ? "Session saved as "+focusDuration(current.durationMs)+"." : "Session details saved.");
+      current.note=v.note.slice(0,4000);
+      // Follow it, or an entry moved into another week vanishes off-screen.
+      if(moved && current.intervals.length)focusWeekOffset=Math.round((current.intervals[0].start-weekBounds(0).start)/604800000);
+      persistFocus();
+      var said=[];
+      if(moved)said.push("moved to "+fmtDate(isoDate(current.intervals[0].start)));
+      if(retimed)said.push("set to "+focusDuration(current.durationMs));
+      toast(said.length ? "Session "+said.join(" and ")+"." : "Session details saved.");
     }});
   }
   async function copyFocusWeek() {
