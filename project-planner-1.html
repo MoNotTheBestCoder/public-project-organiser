@@ -772,6 +772,22 @@
   .cdot.muted { background: var(--ink-3); }
   .cdot.pending { opacity: .4; }
 </style>
+<style id="focusAlertStyles">
+  /* One unmissable pulse when the timer changes phase. A published page cannot
+     raise a browser tab or post a system notification, so this is the signal
+     that does work everywhere: a border around the whole viewport, on the
+     planner and in the floating clock alike, whichever you happen to be
+     looking at. pointer-events:none so it never swallows a click. */
+  @keyframes phase-change-flash { 0%, 100% { opacity: 0; } 45% { opacity: 1; } }
+  body.phase-change::after {
+    content: ""; position: fixed; inset: 0; z-index: 70; pointer-events: none;
+    border: 4px solid var(--brand); opacity: 0;
+    animation: phase-change-flash 1.1s ease-in-out 2;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.phase-change::after { animation: none; opacity: 1; }
+  }
+</style>
 <style id="focusPickerStyles">
   .task-picker { position:relative; text-align:left; margin:0 0 12px; }
   .task-picker > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; list-style:none; padding:13px 14px; border:1px solid var(--line); border-radius:12px; cursor:pointer; background:var(--panel); color:var(--ink); font-size:13px; }
@@ -4542,6 +4558,9 @@
     var sessions=normalizeFocusSessions([{id:id,runId:run.id,assignment:run.assignment,note:run.note,intervals:run.intervals,outcome:outcome}]);
     if (sessions.length) { state.focusSessions.push(sessions[0]); run.completedMs += sessions[0].durationMs; }
   }
+  // How late a tick may be and still count as catching the boundary live.
+  var PHASE_GRACE_MS = 90000;
+
   function focusReady(run, phase) {
     run.phase = phase; run.status = "ready"; run.intervals=[]; run.anchorAt=0;
     run.segmentMs = phase === "break" ? run.settings.breakMinutes*60000 : (run.settings.repeat ? run.settings.focusMinutes*60000 : Math.min(run.settings.focusMinutes*60000,focusBudgetRemaining(run)));
@@ -4550,10 +4569,39 @@
   function focusBudgetRemaining(run) {
     return Math.max(0, run.settings.totalMinutes*60000 - (run.settings.budgetMode === "session" ? run.elapsedMs : run.completedMs));
   }
+  /* Tells someone who is not watching the clock that the timer just changed.
+     A published artifact has no notification permission and no way to raise a
+     browser tab from script, so this does the three things that do work:
+     brings the floating clock forward when it is open, and flashes a border
+     on both surfaces. */
+  var phaseFlashTimer = null;
+  function phaseFlashDocs() {
+    var docs = [document];
+    try { if (focusWindow && !focusWindow.closed && focusWindow.document) docs.push(focusWindow.document); }
+    catch (e) { /* a closed or cross-origin window is simply skipped */ }
+    return docs.filter(function (doc) { return doc && doc.body && doc.body.classList; });
+  }
+  function focusAlert() {
+    try { if (focusWindow && !focusWindow.closed) focusWindow.focus(); } catch (e) {}
+    phaseFlashDocs().forEach(function (doc) {
+      doc.body.classList.remove("phase-change");
+      void doc.body.offsetWidth;                  // restart the animation
+      doc.body.classList.add("phase-change");
+    });
+    window.clearTimeout(phaseFlashTimer);
+    phaseFlashTimer = window.setTimeout(function () {
+      phaseFlashDocs().forEach(function (doc) { doc.body.classList.remove("phase-change"); });
+    }, 2400);
+  }
+
   function focusTick(now) {
     now = now == null ? Date.now() : now;
     var run = state.focusRun;
     if (run && run.status === "running" && focusRemaining(run,now) === 0 && !pendingRemote) {
+      /* How late this tick is to the boundary it is reporting. A live tick is
+         half a second out; a tab that slept can be hours. Background tabs are
+         throttled to about once a minute, so the window has to clear that. */
+      var live = (now - (run.anchorAt + run.remainingMs)) <= PHASE_GRACE_MS;
       focusSettle(run,now);
       if (run.phase === "focus") {
         focusRecord(run,"completed"); run.block++;
@@ -4561,9 +4609,24 @@
         else {
           // Never spend the final remainder on a trailing break: use it for focus.
           var takeBreak = run.settings.breakMinutes > 0 && (run.settings.repeat || run.settings.budgetMode !== "session" || focusBudgetRemaining(run) > run.settings.breakMinutes*60000);
-          focusReady(run,takeBreak ? "break" : "focus"); $("focusMessage").textContent="Focus block saved. Start the next period when you are ready.";
+          focusReady(run,takeBreak ? "break" : "focus");
+          if (takeBreak && live) {
+            /* A break starts itself, but only when we caught the boundary as
+               it happened. Starting one four hours late, because the tab was
+               asleep and this is the catch-up tick, would be meaningless: the
+               break you needed was hours ago. Late boundaries fall back to
+               waiting for a press, which is what unattended time has always
+               done. Breaks are never logged as work, so an auto-start can
+               never credit you for time you were away; that is why this
+               direction may start itself at all and the other may not. */
+            run.status="running"; run.anchorAt=now;
+            $("focusMessage").textContent="Focus block saved. Break started — it is not logged as work.";
+          } else {
+            $("focusMessage").textContent="Focus block saved. Start the next period when you are ready.";
+          }
         }
       } else { focusReady(run,"focus"); $("focusMessage").textContent="Break finished. Ready for the next focus block."; }
+      focusAlert();
       persistFocus();
     }
     renderFocusClock(now);
@@ -4664,7 +4727,7 @@
       var doc=opened.document;
       doc.documentElement.lang="en";
       var style=doc.createElement("style");
-      style.textContent=$("plannerThemeTokens").textContent+$("clientDotStyles").textContent+"*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--canvas);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center}main{max-width:420px;margin:auto}#floatRing{--remaining:100%;width:184px;height:184px;border-radius:50%;padding:5px;margin:0 auto 18px;background:conic-gradient(var(--brand) var(--remaining),var(--line) 0)}.float-dial{height:100%;border-radius:50%;background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center}#floatPhase{color:var(--ink-2);font-size:9px;font-weight:700;letter-spacing:1.5px}#floatClock{font-size:46px;line-height:1.4;font-weight:550;letter-spacing:-2px;font-variant-numeric:tabular-nums}label{display:block;text-align:left;color:var(--ink-2);font-size:11px;margin:12px 0 6px}#floatNote{display:block;width:100%;resize:vertical;min-height:66px;max-height:180px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--ink);font:inherit;font-size:13px;padding:10px;margin:0 0 14px}.buttons{display:flex;justify-content:center;gap:8px}button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:transparent;color:var(--ink);cursor:pointer}#floatStart{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:600}button:disabled{opacity:.4;cursor:default}button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:3px}.hint{font-size:10px;color:var(--ink-2);line-height:1.5;margin-bottom:0}"+$("focusPickerStyles").textContent+"*{box-sizing:border-box}body{padding:10px 14px;font-size:13px}main{max-width:360px}#floatRing{width:132px;height:132px;padding:4px;margin:0 auto 8px}#floatClock{font-size:35px;letter-spacing:-1px}#floatPhase{font-size:8px;letter-spacing:1px}.task-picker{margin-bottom:8px}.task-picker>summary{padding:8px 10px;font-size:12px;gap:8px;min-height:34px}.task-picker>summary span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.picker-panel{position:fixed;z-index:2;inset:8px 10px auto;margin:0;max-height:calc(100vh - 16px);overflow:hidden;box-shadow:var(--lift)}.picker-results{max-height:calc(100vh - 128px);min-height:130px}.picker-panel input{padding:7px;font-size:12px}.picker-row{gap:2px}.picker-task{padding:7px 9px;font-size:12px;border-radius:7px;gap:7px}.picker-task small{margin-top:0;font-size:10px}.picker-type{display:none}.picker-path::before{content:none}.picker-task small:not(.has-path){display:none}.picker-browse,.picker-back{width:28px;height:28px;padding:6px}.picker-caption{margin:4px 8px}.picker-clear{margin-top:4px}#floatNote{height:34px;min-height:34px;max-height:80px;resize:none;padding:8px 10px;margin:0 0 10px;font-size:12px;line-height:16px;border-radius:10px;transition:height .15s}#floatNote:focus{height:66px}.buttons{gap:7px}.buttons button{padding:8px 12px;font-size:12px;border-radius:10px}.hint{font-size:9px;margin:10px 0 0}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.ui-chevron{flex:none;transition:transform .15s}.task-picker[open]>summary>.ui-chevron{transform:rotate(180deg)}";
+      style.textContent=$("plannerThemeTokens").textContent+$("clientDotStyles").textContent+$("focusAlertStyles").textContent+"*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--canvas);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center}main{max-width:420px;margin:auto}#floatRing{--remaining:100%;width:184px;height:184px;border-radius:50%;padding:5px;margin:0 auto 18px;background:conic-gradient(var(--brand) var(--remaining),var(--line) 0)}.float-dial{height:100%;border-radius:50%;background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center}#floatPhase{color:var(--ink-2);font-size:9px;font-weight:700;letter-spacing:1.5px}#floatClock{font-size:46px;line-height:1.4;font-weight:550;letter-spacing:-2px;font-variant-numeric:tabular-nums}label{display:block;text-align:left;color:var(--ink-2);font-size:11px;margin:12px 0 6px}#floatNote{display:block;width:100%;resize:vertical;min-height:66px;max-height:180px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--ink);font:inherit;font-size:13px;padding:10px;margin:0 0 14px}.buttons{display:flex;justify-content:center;gap:8px}button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:transparent;color:var(--ink);cursor:pointer}#floatStart{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:600}button:disabled{opacity:.4;cursor:default}button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:3px}.hint{font-size:10px;color:var(--ink-2);line-height:1.5;margin-bottom:0}"+$("focusPickerStyles").textContent+"*{box-sizing:border-box}body{padding:10px 14px;font-size:13px}main{max-width:360px}#floatRing{width:132px;height:132px;padding:4px;margin:0 auto 8px}#floatClock{font-size:35px;letter-spacing:-1px}#floatPhase{font-size:8px;letter-spacing:1px}.task-picker{margin-bottom:8px}.task-picker>summary{padding:8px 10px;font-size:12px;gap:8px;min-height:34px}.task-picker>summary span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.picker-panel{position:fixed;z-index:2;inset:8px 10px auto;margin:0;max-height:calc(100vh - 16px);overflow:hidden;box-shadow:var(--lift)}.picker-results{max-height:calc(100vh - 128px);min-height:130px}.picker-panel input{padding:7px;font-size:12px}.picker-row{gap:2px}.picker-task{padding:7px 9px;font-size:12px;border-radius:7px;gap:7px}.picker-task small{margin-top:0;font-size:10px}.picker-type{display:none}.picker-path::before{content:none}.picker-task small:not(.has-path){display:none}.picker-browse,.picker-back{width:28px;height:28px;padding:6px}.picker-caption{margin:4px 8px}.picker-clear{margin-top:4px}#floatNote{height:34px;min-height:34px;max-height:80px;resize:none;padding:8px 10px;margin:0 0 10px;font-size:12px;line-height:16px;border-radius:10px;transition:height .15s}#floatNote:focus{height:66px}.buttons{gap:7px}.buttons button{padding:8px 12px;font-size:12px;border-radius:10px}.hint{font-size:9px;margin:10px 0 0}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.ui-chevron{flex:none;transition:transform .15s}.task-picker[open]>summary>.ui-chevron{transform:rotate(180deg)}";
       doc.head.appendChild(style);
       doc.documentElement.setAttribute("data-theme",currentTheme);
       doc.body.innerHTML='<main><div id="floatRing"><div class="float-dial"><div id="floatPhase"></div><div id="floatClock" role="timer" aria-label="Time remaining"></div></div></div><details class="task-picker" id="floatPicker"><summary><span id="floatPickerLabel">Attach client, project or task</span><svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="picker-panel"><div class="picker-searchbar"><input type="search" id="floatPickerSearch" aria-label="Find focus assignment" placeholder="Search tasks, projects or clients…" autocomplete="off"><button type="button" class="picker-close" data-focus-close aria-label="Close assignment picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div><div class="picker-results" id="floatPickerResults"></div></div></details><label class="sr" for="floatNote">Quick note for this focus block</label><textarea id="floatNote" rows="1" maxlength="4000" placeholder="Quick note…"></textarea><div class="buttons"><button id="floatStart">Start</button><button id="floatFinish">End session</button></div><p class="hint">Keep planner open in the background.'+(useWindow ? '<br>This mini window does not stay on top automatically.' : '')+'</p></main>';

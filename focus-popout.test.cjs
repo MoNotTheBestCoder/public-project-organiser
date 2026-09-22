@@ -17,7 +17,7 @@ function surface() {
     }
     return elements.get(id);
   };
-  const document = {getElementById:element,addEventListener(){},documentElement:{setAttribute(){}},head:{appendChild(){}},body:{innerHTML:''},createElement:()=>({}),activeElement:null};
+  const document = {getElementById:element,addEventListener(){},documentElement:{setAttribute(){}},head:{appendChild(){}},body:{innerHTML:'',classList:{add(){},remove(){},contains:()=>false,toggle(){}}},createElement:()=>({}),activeElement:null};
   const win = {document,closed:false,focusCount:0,focus(){this.focusCount++;},
     setInterval(callback){const id=++sequence;intervals.set(id,callback);return id;},clearInterval:id=>intervals.delete(id),
     addEventListener:(name,callback)=>events[name]=callback,
@@ -213,7 +213,8 @@ test('changing level during a break prepares the next block without rewriting pr
  x.element('focusTotal').value='3';x.element('focusPeriod').value='1';x.element('focusBreak').value='1';
  x.a.focusStart();x.advance(60000);x.a.focusTick();assert.equal(x.a.state().focusRun.phase,'break');
  x.a.updateFocusDetail('target','p:same');assert.equal(x.a.state().focusSessions[0].assignment.projectId,'');
- x.a.focusStart();x.advance(60000);x.a.focusTick();x.a.focusStart();x.advance(60000);x.a.focusTick();
+ // the break is already running: it started itself when the block ended
+ x.advance(60000);x.a.focusTick();x.a.focusStart();x.advance(60000);x.a.focusTick();
  assert.equal(x.a.state().focusSessions[1].assignment.projectId,'same');assert.equal(x.a.state().focusSessions[1].assignment.taskId,'');
 });
 test('editing a log preserves removed assignment snapshots and can reassign to another level',()=>{

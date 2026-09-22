@@ -17,7 +17,9 @@ function app(original=false){
  if(original)code=code.replace(',loadChatDrafts,saveContext,initContext','');
  const els={};const data=new Map();
  const element=id=>els[id]??=( {value:'',textContent:'',innerHTML:'',disabled:false,dataset:{},classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(n,f){this.listeners[n]=f},focus(){},select(){},querySelector(){return element('confirmBtn')}});
- const ctx={console,URLSearchParams,location:{search:''},Intl,Date,AbortController,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},navigator:{},document:{getElementById:element,addEventListener(){},querySelector(){return element('save')}}};ctx.window=ctx;ctx.crypto=require('node:crypto').webcrypto;vm.createContext(ctx);vm.runInContext(code,ctx);ctx.api.stubUI();ctx.api.setMode();return {a:ctx.api,ctx,element,data};
+ const bodyClasses=new Set();
+ const body={offsetWidth:0,classList:{add:x=>bodyClasses.add(x),remove:x=>bodyClasses.delete(x),contains:x=>bodyClasses.has(x),toggle(){}}};
+ const ctx={console,URLSearchParams,location:{search:''},Intl,Date,AbortController,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},navigator:{},document:{getElementById:element,addEventListener(){},querySelector(){return element('save')},body}};ctx.window=ctx;ctx.crypto=require('node:crypto').webcrypto;vm.createContext(ctx);vm.runInContext(code,ctx);ctx.api.stubUI();ctx.api.setMode();return {a:ctx.api,ctx,element,data,bodyClasses};
 }
 const fixture=()=>({clients:[{id:'c1',name:'Alpha'},{id:'c2',name:'Beta'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],tasks:Array.from({length:15},(_,i)=>({id:'t'+i,title:i===3||i===8?'Duplicate':'Task '+i,projectId:'p1',clientId:'c1',status:i===10?'Done':'To Do',dueDate:i%2?'2026-10-01':''}))});
 test('original deletion uses the selected ID, not final index',()=>{const {a,ctx}=app(true);a.setState(fixture());a.capture();a.deleteItem('task','t3');ctx.confirm.onConfirm();assert.equal(a.state().tasks.length,14);assert(!a.state().tasks.some(t=>t.id==='t3'));assert(a.state().tasks.some(t=>t.id==='t14'));});
@@ -73,14 +75,49 @@ for(const [total,focus,rest,expected] of [[10,25,5,[10]],[55,25,5,[25,5,25]],[27
 });
 test('session budget survives reload, pauses and waiting between blocks without counting them',()=>{
  const {a}=timer(75,25,5);a.focusStart(epoch);a.focusPause(epoch+10*minute);a.setState(a.serialize());
- a.focusStart(epoch+110*minute);a.focusTick(epoch+125*minute);assert.equal(a.state().focusRun.elapsedMs,25*minute);
+ // a hundred minutes of doing nothing must not touch the budget
+ a.focusStart(epoch+110*minute);a.focusTick(epoch+125*minute);
+ assert.equal(a.state().focusRun.elapsedMs,25*minute);        // one full block, nothing else
+ // the break then starts itself and spends its five minutes of a session budget
+ a.focusTick(epoch+130*minute);
+ assert.equal(a.state().focusRun.phase,'focus');
+ assert.equal(a.state().focusRun.status,'ready');             // but focus still waits for a press
+ assert.equal(a.state().focusRun.elapsedMs,30*minute);
+ assert.equal(a.state().focusRun.completedMs,25*minute);      // only focus counts as completed work
+ // seventy more minutes of waiting, then a paused block, across a reload
  a.focusStart(epoch+200*minute);a.focusPause(epoch+202*minute);a.setState(a.serialize());
- assert.equal(a.state().focusRun.remainingMs,3*minute);a.focusStart(epoch+300*minute);a.focusTick(epoch+303*minute);
- assert.equal(a.state().focusRun.elapsedMs,30*minute);assert.equal(a.state().focusRun.completedMs,25*minute);
- a.focusStart(epoch+303*minute);a.focusTick(epoch+328*minute);a.focusStart(epoch+328*minute);a.focusTick(epoch+333*minute);
- assert.equal(a.state().focusRun.segmentMs,15*minute);
+ assert.equal(a.state().focusRun.remainingMs,23*minute);
+ assert.equal(a.state().focusRun.elapsedMs,32*minute);
+ // finish that block, let its break run, and the next block is cut to what is
+ // left of the budget rather than overrunning it
+ a.focusStart(epoch+300*minute);a.focusTick(epoch+323*minute);
+ assert.equal(a.state().focusRun.elapsedMs,55*minute);
+ a.focusTick(epoch+328*minute);
+ assert.equal(a.state().focusRun.segmentMs,15*minute);        // 75 total, 60 spent
 });
 test('pause, resume and early finish record only active intervals',()=>{const {a}=timer(5,5,0);a.focusStart(epoch);a.focusPause(epoch+20000);a.focusStart(epoch+120000);a.focusFinish(epoch+130000);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,30000);assert.equal(a.state().focusSessions[0].intervals.length,2);assert.equal(a.state().focusSessions[0].outcome,'ended-early');a.focusFinish(epoch+140000);assert.equal(a.state().focusSessions.length,1);});
+test('a break starts itself when the block ends while you are watching',()=>{
+ const {a,bodyClasses}=timer(60,25,5);
+ a.focusStart(epoch);
+ a.focusTick(epoch+25*minute);                       // the boundary, caught as it happens
+ assert.equal(a.state().focusRun.phase,'break');
+ assert.equal(a.state().focusRun.status,'running','the break still waited for a press');
+ assert(bodyClasses.has('phase-change'),'nothing signalled the change');
+ // the other direction does not start itself: focus would put minutes in the
+ // timesheet for a desk nobody has come back to
+ a.focusTick(epoch+30*minute);
+ assert.equal(a.state().focusRun.phase,'focus');
+ assert.equal(a.state().focusRun.status,'ready');
+ assert.equal(a.state().focusSessions.length,1);     // and a break is never logged as work
+});
+test('a boundary noticed long after it happened does not start a break',()=>{
+ const {a}=timer(60,25,5);
+ a.focusStart(epoch);
+ a.focusTick(epoch+4*60*minute);                     // the tab slept; this is the catch-up tick
+ assert.equal(a.state().focusRun.phase,'break');
+ assert.equal(a.state().focusRun.status,'ready','a break four hours late started itself');
+ assert.equal(a.state().focusSessions[0].durationMs,25*minute);   // only the work that happened
+});
 test('background tab completes one block without inventing subsequent work',()=>{const {a}=timer();a.focusStart(epoch);a.focusTick(epoch+4*60*minute);assert.equal(a.state().focusSessions[0].durationMs,25*minute);assert.equal(a.state().focusRun.status,'ready');a.focusTick(epoch+5*60*minute);assert.equal(a.state().focusSessions.length,1);});
 test('reload resumes timestamp and completion remains idempotent after normalization',()=>{const {a,data}=timer(1,1,0);a.focusStart(epoch);const snapshot=JSON.parse(data.get('project-planner-v1'));a.setState(snapshot);a.focusTick(epoch+2*minute);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,minute);a.setState(JSON.parse(data.get('project-planner-v1')));a.focusTick(epoch+3*minute);assert.equal(a.state().focusSessions.length,1);});
 test('JSON includes settings, active timer, task snapshots and notes',()=>{const {a,data}=timer(90,30,8);a.focusStart(epoch);assert.equal(a.serialize().version,5);a.focusFinish(epoch+45000);const json=JSON.parse(data.get('project-planner-v1'));assert.equal(json.focusSettings.repeat,false);assert.equal(json.focusSettings.totalMinutes,90);assert.equal(json.focusSettings.focusMinutes,30);assert.equal(json.focusSettings.breakMinutes,8);assert.equal(json.focusSessions[0].assignment.clientName,'Alpha');assert.equal(json.focusSessions[0].note,'Drafted client scope');assert.equal(json.focusRun.status,'completed');});
