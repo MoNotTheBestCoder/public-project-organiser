@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusReset,focusTick,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusReset,focusTick,parseDuration,durationStep,durationText,focusPlan,renderFocusPlan,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -183,6 +183,58 @@ test('a short session resets to a first block cut to the session, as a first sta
  assert.equal(a.state().focusRun.status,'ready');
  assert.equal(a.state().focusRun.segmentMs,first.segmentMs);
  assert.equal(a.state().focusRun.segmentMs,15*minute);
+});
+test('a typed length is read the way people write it, and nonsense is refused rather than guessed',()=>{
+ const {a}=app();
+ const cases={'90':90,'90m':90,'90 min':90,'90 minutes':90,'1:30':90,'0:45':45,'1h30':90,'1h 30m':90,'1 h 30 min':90,
+  '1.5h':90,'2h':120,'2 hours':120,'1 hour':60,'  45  ':45,'1H 5M':65};
+ for(const [typed,minutes] of Object.entries(cases)) assert.equal(a.parseDuration(typed),minutes,typed);
+ for(const junk of ['','   ','banana','1:75','h','1h 90m 3','-5','1,5h','ninety','1:30pm',null,undefined])
+  assert.equal(a.parseDuration(junk),null,String(junk));
+});
+test('a step lands on a multiple of five, and a long length moves in fifteens above an hour',()=>{
+ const {a}=app();
+ assert.equal(a.durationStep(25,1,false),30);  assert.equal(a.durationStep(25,-1,false),20);
+ assert.equal(a.durationStep(37,1,false),40);  assert.equal(a.durationStep(37,-1,false),35);   // a typed odd value rejoins the grid
+ assert.equal(a.durationStep(0,1,false),5);    assert.equal(a.durationStep(5,-1,false),0);
+ assert.equal(a.durationStep(90,1,false),95);                                                  // short lengths always in fives
+ assert.equal(a.durationStep(55,1,true),60);   assert.equal(a.durationStep(60,1,true),75);      // long: fives to the hour, then fifteens
+ assert.equal(a.durationStep(75,-1,true),60);  assert.equal(a.durationStep(60,-1,true),55);
+ assert.equal(a.durationStep(65,1,true),75);   assert.equal(a.durationStep(65,-1,true),60);
+ assert.equal(a.durationText(45),'45 min');    assert.equal(a.durationText(90),'1h 30m');  assert.equal(a.durationText(120),'2h');
+ for(const m of [5,45,60,90,135,1435]) assert.equal(a.parseDuration(a.durationText(m)),m,'round trip '+m);
+});
+test('the session preview is exactly what the timer runs, block by block',()=>{
+ // Drive the real timer through a whole session and compare with the plan.
+ const run=(total,focus,rest)=>{
+  const {a}=timer(total,focus,rest);let now=epoch;a.focusStart(now);const seen=[];
+  for(let guard=0;guard<400;guard++){
+   const r=a.state().focusRun;
+   if(!r||r.status==='completed')break;
+   if(r.status==='ready'){a.focusStart(now);continue;}
+   seen.push((r.phase==='focus'?'f':'b')+Math.round(r.segmentMs/minute));
+   now+=r.remainingMs;a.focusTick(now);
+  }
+  return {seen:seen.join(','),plan:a.focusPlan(total,focus,rest).map(p=>(p.kind==='focus'?'f':'b')+p.minutes).join(',')};
+ };
+ for(const [t,f,r] of [[75,25,5],[60,25,5],[60,25,0],[25,25,5],[10,25,5],[55,25,5],[27,25,5],[90,30,10],[120,50,10],[31,30,1],[61,30,30],[1440,180,60]]){
+  const x=run(t,f,r);
+  assert.equal(x.plan,x.seen,`${t}/${f}/${r}: the preview says ${x.plan} but the timer ran ${x.seen}`);
+ }
+});
+test('the preview line says what the settings add up to, and stays quiet for plans it cannot describe',()=>{
+ const {a,element}=app();
+ a.renderFocusPlan({totalMinutes:75,focusMinutes:25,breakMinutes:5,repeat:false,budgetMode:'session'});
+ assert.equal(element('focusPlan').hidden,false);
+ assert.match(element('focusPlanText').innerHTML,/You’ll focus for 1h 5m<\/strong> with 2 breaks/);
+ assert.equal(element('focusPlanNote').textContent,'2 blocks of 25 min, then a last one of 15 min, so the session ends on time.');
+ a.renderFocusPlan({totalMinutes:50,focusMinutes:25,breakMinutes:0,repeat:false,budgetMode:'session'});
+ assert.match(element('focusPlanText').innerHTML,/1h 40m|50 min<\/strong> with no breaks/);
+ assert.equal(element('focusPlanNote').textContent,'');                // every block full length: nothing to explain
+ a.renderFocusPlan({totalMinutes:60,focusMinutes:25,breakMinutes:5,repeat:true,budgetMode:'session'});
+ assert.equal(element('focusPlan').hidden,true,'a legacy repeating timer has no fixed plan to show');
+ a.renderFocusPlan({totalMinutes:60,focusMinutes:25,breakMinutes:5,repeat:false,budgetMode:'focus'});
+ assert.equal(element('focusPlan').hidden,true);
 });
 test('background tab completes one block without inventing subsequent work',()=>{const {a}=timer();a.focusStart(epoch);a.focusTick(epoch+4*60*minute);assert.equal(a.state().focusSessions[0].durationMs,25*minute);assert.equal(a.state().focusRun.status,'ready');a.focusTick(epoch+5*60*minute);assert.equal(a.state().focusSessions.length,1);});
 test('reload resumes timestamp and completion remains idempotent after normalization',()=>{const {a,data}=timer(1,1,0);a.focusStart(epoch);const snapshot=JSON.parse(data.get('project-planner-v1'));a.setState(snapshot);a.focusTick(epoch+2*minute);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,minute);a.setState(JSON.parse(data.get('project-planner-v1')));a.focusTick(epoch+3*minute);assert.equal(a.state().focusSessions.length,1);});

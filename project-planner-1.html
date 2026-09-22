@@ -424,10 +424,53 @@
   .field { margin-bottom: 15px; }
   .field label { display: block; font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
   .field .fhelp { font-size: 13.5px; color: var(--ink-3); margin-top: 6px; }
-  .duration-field { display: flex; gap: 10px; }
-  .dur-part { display: flex; align-items: baseline; gap: 7px; flex: 1 1 0; min-width: 0; }
-  .dur-part input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
-  .dur-part label { flex: none; font-size: 13.5px; color: var(--ink-2); margin: 0; }
+  /* Duration stepper: one control for every length the planner asks for.
+     The number is centred on the whole box, not on the space beside the
+     arrows: with a mouse the arrows stack on the right, so the value is padded
+     on the left by exactly their column's width. On touch the same pair sits
+     either side of it, each a full-height target, and the padding evens out. */
+  .dur-stepper { --dur-arrow: 40px; container-type: inline-size; position: relative; display: flex; align-items: stretch;
+    height: 58px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md);
+    overflow: hidden; touch-action: manipulation; }
+  .dur-stepper.lg { --dur-arrow: 44px; height: 76px; }
+  .dur-stepper:has(.dur-value:focus-visible), .dur-stepper.editing { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .dur-stepper.is-disabled { background: var(--panel-2); }
+  .dur-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
+    padding: 0 10px 0 calc(10px + var(--dur-arrow)); cursor: text; user-select: none; outline: none; color: var(--ink); }
+  .dur-value[hidden] { display: none; }           /* display:flex above would otherwise beat [hidden] */
+  .dur-value:focus-visible { outline: none; }
+  .dur-stepper.is-disabled .dur-value { cursor: default; color: var(--ink-2); }
+  /* Trimmed to cap height and baseline, so flex centring centres the digits
+     themselves rather than a line box with room for descenders they lack. */
+  .dur-run { display: inline-block; white-space: nowrap; font-size: clamp(20px, 10cqi, 24px); font-weight: 500;
+    line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-box: trim-both cap alphabetic; }
+  .dur-stepper.lg .dur-run { font-size: clamp(26px, 12cqi, 34px); }
+  .dur-run .unit { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--ink-3); margin: 0 .45em 0 .12em; }
+  .dur-stepper.lg .dur-run .unit { font-size: 14px; }
+  .dur-run .unit:last-child { margin-right: 0; }
+  .dur-arrows { flex: none; width: var(--dur-arrow); display: flex; flex-direction: column; border-left: 1px solid var(--line-soft); }
+  .dur-arrows button { flex: 1; display: grid; place-items: center; width: 100%; min-height: 0; margin: 0; padding: 0;
+    border: 0; border-radius: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+  .dur-arrows button + button { border-top: 1px solid var(--line-soft); }
+  .dur-arrows button:hover:not(:disabled) { background: var(--panel-2); color: var(--ink); border-color: var(--line-soft); }
+  .dur-arrows button.held, .dur-arrows button:active:not(:disabled) { background: var(--brand-soft); color: var(--brand); }
+  .dur-arrows button:disabled { opacity: .3; cursor: default; }
+  .dur-stepper .dur-edit { flex: 1; min-width: 0; width: 100%; height: auto; margin: 0; border: 0; border-radius: 0;
+    padding: 0 10px 0 calc(10px + var(--dur-arrow)); background: transparent; box-shadow: none; outline: 0; color: var(--ink);
+    text-align: center; font: inherit; font-size: clamp(18px, 9cqi, 22px); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .dur-stepper.lg .dur-edit { font-size: clamp(22px, 10cqi, 28px); }
+  .dur-hint { margin: 6px 0 0; font-size: 12px; color: var(--ink-3); }
+  .dur-hint:empty { display: none; }             /* no line reserved for a message that is not there */
+  .dur-hint.warn { color: var(--danger); }
+  @media (pointer: coarse) {
+    .dur-arrows { display: contents; }
+    .dur-arrows button { flex: none; width: 48px; }
+    .dur-arrows button + button { border-top: 0; }
+    .dur-stepper.lg .dur-arrows button { width: 52px; }
+    .dur-arrows .down { order: -1; border-right: 1px solid var(--line-soft); }
+    .dur-arrows .up { order: 1; border-left: 1px solid var(--line-soft); }
+    .dur-value, .dur-stepper .dur-edit { padding: 0 10px; }
+  }
   .field .ferr { font-size: 13.5px; color: var(--danger); margin-top: 6px; }
   .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
@@ -669,13 +712,26 @@
   #focusProgress::-webkit-progress-bar { background: var(--line); }
   #focusProgress::-webkit-progress-value { background: var(--brand); border-radius: 10px; }
   #focusProgress::-moz-progress-bar { background: var(--brand); border-radius: 10px; }
-  .focus-setup { min-width: 0; }
-  .focus-duration-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-bottom: 22px; }
-  .focus-duration-fields > label > span { display: block; font-size: 11px; color: var(--ink-2); margin-bottom: 8px; }
-  .focus-number { display: flex; align-items: center; padding: 4px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-  .focus-number input { width: 100%; min-width: 0; padding: 7px 0; border: none; box-shadow: none; background: transparent; color: var(--ink); font-family: inherit; font-size: 23px; font-weight: 500; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; }
-  .focus-number input::-webkit-inner-spin-button, .focus-number input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .focus-number > span { font-size: 10px; color: var(--ink-3); }
+  .focus-setup { min-width: 0; container-type: inline-size; }
+  .focus-duration-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
+  .focus-duration-fields > .dur-field:first-child { grid-column: 1 / -1; }
+  .focus-duration-fields .dur-label { display: block; font-size: 11px; color: var(--ink-2); margin-bottom: 8px; }
+  /* Block and break side by side need room for a number between their arrows;
+     a narrow panel stacks them. A panel-width rule, so a container query. */
+  @container (max-width: 440px) { .focus-duration-fields { grid-template-columns: minmax(0,1fr); } }
+  /* What the chosen lengths add up to. */
+  .focus-plan { margin: 0 0 20px; }
+  .focus-plan[hidden] { display: none; }
+  .focus-plan-text { margin: 0 0 7px; font-size: 12.5px; color: var(--ink-2); }
+  .focus-plan-text strong { font-weight: 600; color: var(--ink); }
+  .focus-plan-bar { display: flex; gap: 3px; height: 6px; }
+  .focus-plan-bar.dense { gap: 1px; }
+  .focus-plan-bar[hidden] { display: none; }
+  .focus-plan-bar span { min-width: 2px; border-radius: 3px; }
+  .focus-plan-bar .f { background: var(--brand); }
+  .focus-plan-bar .b { background: var(--line); }
+  .focus-plan-note { margin: 7px 0 0; font-size: 11.5px; color: var(--ink-3); }
+  .focus-plan-note:empty { display: none; }
   .focus-label { display: block; margin: 15px 0 7px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
   .focus-label > span { color: var(--ink-3); font-weight: 400; margin-left: 4px; }
   #focusTask, #focusNote { border-radius: 12px; background: var(--panel); font-size: 13px; }
@@ -941,23 +997,15 @@
         </div>
         <div class="focus-setup">
           <div class="focus-duration-fields">
-            <label for="focusTotal"><span id="focusTotalLabel">Session length</span><div class="focus-number"><input id="focusTotal" type="number" inputmode="numeric" min="0" data-min="1" max="1440" step="5" list="sessionMinutes" value="60"><span>min</span></div></label>
-            <label for="focusPeriod"><span>Focus block</span><div class="focus-number"><input id="focusPeriod" type="number" inputmode="numeric" min="0" data-min="1" max="180" step="5" list="blockMinutes" value="25"><span>min</span></div></label>
-            <label for="focusBreak"><span>Break</span><div class="focus-number"><input id="focusBreak" type="number" inputmode="numeric" min="0" max="60" step="5" list="breakMinutes" value="5"><span>min</span></div></label>
-            <!-- The arrows step by five; these are the values worth jumping
-                 straight to. A break spans its whole range in fives, a focus
-                 block does so where it matters and then thins out, and a
-                 session length offers the lengths people actually pick rather
-                 than 288 five-minute rows up to a full day. Typing any whole
-                 number in range still works; see minutesInRange. -->
-            <datalist id="sessionMinutes"><option value="15"><option value="30"><option value="45"><option value="60"><option value="75"><option value="90"><option value="120"><option value="150"><option value="180"><option value="240"><option value="300"><option value="360"></datalist>
-            <datalist id="blockMinutes"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"><option value="35"><option value="40"><option value="45"><option value="50"><option value="55"><option value="60"><option value="75"><option value="90"><option value="120"></datalist>
-            <datalist id="breakMinutes"><option value="0"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"><option value="45"><option value="60"></datalist>
+            <div class="dur-field"><span class="dur-label" id="focusTotalLabel">Session length</span><div class="dur-stepper" data-stepper data-input="focusTotal" data-long="1" data-labelledby="focusTotalLabel"></div><p class="dur-hint"></p><input type="hidden" id="focusTotal" value="60" min="1" max="1440"></div>
+            <div class="dur-field"><span class="dur-label" id="focusPeriodLabel">Focus block</span><div class="dur-stepper" data-stepper data-input="focusPeriod" data-labelledby="focusPeriodLabel"></div><p class="dur-hint"></p><input type="hidden" id="focusPeriod" value="25" min="1" max="180"></div>
+            <div class="dur-field"><span class="dur-label" id="focusBreakLabel">Break</span><div class="dur-stepper" data-stepper data-input="focusBreak" data-labelledby="focusBreakLabel"></div><p class="dur-hint"></p><input type="hidden" id="focusBreak" value="5" min="0" max="60"></div>
           </div>
+          <div class="focus-plan" id="focusPlan" hidden><p class="focus-plan-text" id="focusPlanText"></p><div class="focus-plan-bar" id="focusPlanBar" aria-hidden="true"></div><p class="focus-plan-note" id="focusPlanNote"></p></div>
           <label class="focus-label">What are you working on?</label><input id="focusTask" type="hidden" value="">
           <details class="task-picker" id="focusPicker"><summary><span id="focusPickerLabel">Attach client, project or task</span><svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="picker-panel"><div class="picker-searchbar"><input type="search" id="focusPickerSearch" aria-label="Find focus assignment" placeholder="Search tasks, projects or clients…" autocomplete="off"><button type="button" class="picker-close" data-focus-close aria-label="Close assignment picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div><div class="picker-results" id="focusPickerResults"></div></div></details>
           <label class="focus-label" for="focusNote">Session note <span>optional</span></label><textarea id="focusNote" maxlength="4000" rows="2" placeholder="e.g. Reviewed the scope and drafted the client update"></textarea>
-          <p class="focus-guidance">Session length includes breaks; only focused work goes into your time log. The last focus block fits the time left. Start each period when you’re ready; pauses do not use session time.</p>
+          <p class="focus-guidance">Session length includes breaks; only focused work goes into your time log. Breaks start on their own and each focus block waits for you; pauses do not use session time.</p>
           <p id="focusMessage" class="focus-message" role="status" aria-live="polite"></p>
         </div>
       </div>
@@ -2544,12 +2592,253 @@
     applyPendingRemote();
   }
 
+  /* ---------------------------- durations ---------------------------- *
+   * One control for every length the planner asks for: session length,
+   * focus block and break on the Focus page, and the time on a logged
+   * session. A number between up and down arrows. Click it and type 90, 1:30
+   * or 1h 30m; hold an arrow to run; scroll over it to step. A hidden input
+   * beneath holds the minutes, so the code that read the old number boxes
+   * reads it unchanged, and a change event fires just as a typed edit did.
+   * ------------------------------------------------------------------ */
+  var DURATION_UP = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg>';
+  var DURATION_DOWN = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>';
+
+  function durationParts(m) {
+    if (m < 60) return [[m, "min"]];
+    var h = Math.floor(m / 60), r = m % 60;
+    return r ? [[h, "h"], [r, "m"]] : [[h, "h"]];
+  }
+  // For sentences: "45 min", "1h 30m", "2h". parseDuration reads all three back.
+  function durationText(m) {
+    return m < 60 ? m + " min" : durationParts(m).map(function (p) { return p[0] + p[1]; }).join(" ");
+  }
+  function durationSpoken(m) {
+    var h = Math.floor(m / 60), r = m % 60, out = [];
+    if (h) out.push(h + (h === 1 ? " hour" : " hours"));
+    if (r || !h) out.push(r + (r === 1 ? " minute" : " minutes"));
+    return out.join(" ");
+  }
+  /* Reads what people actually type for a length: 90, 90m, 90 min, 1:30,
+     1h30, 1h 30m, 1.5h, 2 hours. Anything else is null, never a guess. */
+  function parseDuration(raw) {
+    var s = String(raw == null ? "" : raw).trim().toLowerCase().replace(/\s+/g, " "), m;
+    if (!s) return null;
+    if ((m = /^(\d{1,4}):([0-5]?\d)$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]);
+    if ((m = /^(\d{1,5}) ?(m|min|mins|minute|minutes)?$/.exec(s))) return Number(m[1]);
+    if ((m = /^(\d{1,3}(?:\.\d+)?) ?(h|hr|hrs|hour|hours)(?: ?(\d{1,2}) ?(m|min|mins|minute|minutes)?)?$/.exec(s)))
+      return Math.round(Number(m[1]) * 60) + (m[3] ? Number(m[3]) : 0);
+    return null;
+  }
+  /* Five-minute steps that land on multiples of five, so a typed 37 goes to
+     40 or 35. Long lengths move in fifteens above an hour, so a long session
+     is not dozens of presses away. */
+  function durationStep(value, dir, long) {
+    var size = long && (dir > 0 ? value >= 60 : value > 60) ? 15 : 5;
+    return dir > 0 ? (Math.floor(value / size) + 1) * size : (Math.ceil(value / size) - 1) * size;
+  }
+
+  var durationControls = Object.create(null);    // hidden input id -> { input, draw, busy }
+  var pageWheelAt = 0;                            // when a wheel last scrolled the page itself
+
+  function mountDurationStepper(host) {
+    var doc = host.ownerDocument, input = doc.getElementById(host.getAttribute("data-input"));
+    if (!input) return;
+    var long = host.getAttribute("data-long") === "1", labelId = host.getAttribute("data-labelledby");
+    var labelEl = labelId ? doc.getElementById(labelId) : null;
+    var hint = host.parentNode ? host.parentNode.querySelector(".dur-hint") : null;
+    host.innerHTML = '<div class="dur-value" role="spinbutton" tabindex="0" title="Click to type a length"' +
+      (labelId ? ' aria-labelledby="' + esc(labelId) + '"' : "") + "></div>" +
+      '<div class="dur-arrows"><button type="button" class="up" tabindex="-1">' + DURATION_UP + "</button>" +
+      '<button type="button" class="down" tabindex="-1">' + DURATION_DOWN + "</button></div>";
+    var val = host.querySelector(".dur-value"), up = host.querySelector(".up"), down = host.querySelector(".down");
+    var editing = null, commitTimer = null, held = false, committed = input.value;
+    var wheelAcc = 0, wheelTimer = null;
+
+    function name() { return labelEl ? labelEl.textContent.trim().toLowerCase() : "length"; }
+    function lo() { var n = Number(input.min); return Number.isFinite(n) ? n : 0; }
+    function hi() { var n = Number(input.max); return Number.isFinite(n) && n > 0 ? n : 1440; }
+    function now() { var n = Math.round(Number(input.value)); return Number.isFinite(n) ? n : lo(); }
+    function locked() { return !!input.disabled; }
+    function say(text, warn) {
+      if (!hint) return;
+      hint.textContent = text || "";
+      hint.classList.toggle("warn", !!warn);
+    }
+    function draw() {
+      if (editing) return;
+      var v = now(), off = locked();
+      val.innerHTML = '<span class="dur-run">' + durationParts(v).map(function (p) {
+        return '<span class="num">' + p[0] + '</span><span class="unit">' + p[1] + "</span>";
+      }).join("") + "</span>";
+      val.setAttribute("aria-valuenow", v);
+      val.setAttribute("aria-valuemin", lo());
+      val.setAttribute("aria-valuemax", hi());
+      val.setAttribute("aria-valuetext", durationSpoken(v));
+      val.setAttribute("aria-disabled", off ? "true" : "false");
+      host.classList.toggle("is-disabled", off);
+      if (off) say("");
+      up.disabled = off || v >= hi(); down.disabled = off || v <= lo();
+      up.setAttribute("aria-label", "More " + name());
+      down.setAttribute("aria-label", "Less " + name());
+    }
+    /* A value arriving from outside (renderFocus writing the saved settings)
+       is by definition already saved. Only this adopts it as committed: if
+       draw() did, every step drawn before its change fired would look saved
+       already, and a single notch, keypress or typed length would never save. */
+    function sync() {
+      if (!editing && !pending()) committed = input.value;
+      draw();
+    }
+    function pending() { return !!(commitTimer || held); }
+    /* The value and anything previewing it move at once; the change that
+       saves it fires once the gesture ends. Held down, an arrow steps twenty
+       times a second, and inside Claude every save is a storage write. */
+    function show(v) {
+      v = Math.min(hi(), Math.max(lo(), v));
+      if (v === now()) return false;
+      input.value = String(v);
+      draw();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    }
+    function commit() {
+      window.clearTimeout(commitTimer); commitTimer = null;
+      if (input.value === committed) return;
+      committed = input.value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    function commitSoon() { window.clearTimeout(commitTimer); commitTimer = window.setTimeout(commit, 300); }
+    function nudge(dir) { if (!locked()) show(durationStep(now(), dir, long)); }
+
+    function hold(btn, dir) {
+      var timer = null, count = 0;
+      function stop() {
+        if (!held) return;
+        window.clearTimeout(timer); timer = null; held = false;
+        btn.classList.remove("held");
+        commit();
+      }
+      btn.addEventListener("pointerdown", function (e) {
+        if (btn.disabled || e.button > 0) return;
+        e.preventDefault();                      // no focus theft, no text selection
+        held = true; btn.classList.add("held"); say("");
+        nudge(dir); count = 0;
+        (function again(delay) {
+          timer = window.setTimeout(function () {
+            if (btn.disabled) { stop(); return; }
+            nudge(dir); count++;
+            again(count > 8 ? 45 : 90);
+          }, delay);
+        })(420);
+      });
+      ["pointerup", "pointerleave", "pointercancel"].forEach(function (t) { btn.addEventListener(t, stop); });
+      // Assistive technology activates a button without a pointer; detail is 0.
+      btn.addEventListener("click", function (e) { if (e.detail === 0 && !btn.disabled) { nudge(dir); commit(); } });
+    }
+    hold(up, 1); hold(down, -1);
+
+    host.addEventListener("wheel", function (e) {
+      if (locked() || editing || !e.deltaY) return;
+      /* A page scroll that sweeps across the control keeps scrolling the
+         page. Only a scroll that starts on the control changes its value. */
+      if (Date.now() - pageWheelAt < 350) { pageWheelAt = Date.now(); return; }
+      e.preventDefault();
+      var dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      window.clearTimeout(wheelTimer);
+      wheelTimer = window.setTimeout(function () { wheelAcc = 0; }, 200);
+      if (Math.abs(dy) >= 50) { wheelAcc = 0; nudge(dy < 0 ? 1 : -1); }     // a mouse notch: one step
+      else {                                                                 // a trackpad: every 50px
+        wheelAcc += dy;
+        if (Math.abs(wheelAcc) >= 50) { nudge(wheelAcc < 0 ? 1 : -1); wheelAcc = 0; }
+      }
+      say("");
+      commitSoon();
+    }, { passive: false });
+
+    val.addEventListener("keydown", function (e) {
+      if (locked()) return;
+      var big = long ? 60 : 15;
+      if (e.key === "ArrowUp") { e.preventDefault(); nudge(1); commitSoon(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); nudge(-1); commitSoon(); }
+      else if (e.key === "PageUp") { e.preventDefault(); show(now() + big); commitSoon(); }
+      else if (e.key === "PageDown") { e.preventDefault(); show(now() - big); commitSoon(); }
+      else if (e.key === "Home") { e.preventDefault(); show(lo()); commitSoon(); }
+      else if (e.key === "End") { e.preventDefault(); show(hi()); commitSoon(); }
+      else if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); edit(""); }
+      else if (/^[0-9]$/.test(e.key)) { e.preventDefault(); edit(e.key); }
+    });
+    val.addEventListener("click", function () { edit(""); });
+    val.addEventListener("blur", function () { if (!editing) say(""); });
+
+    function edit(seed) {
+      if (editing || locked()) return;
+      commit();
+      var box = doc.createElement("input");
+      box.type = "text"; box.className = "dur-edit"; box.autocomplete = "off";
+      box.setAttribute("aria-label", (labelEl ? labelEl.textContent.trim() : "Length") + ", type a length such as 90 or 1h 30m");
+      box.value = seed || durationText(now());
+      editing = box;
+      host.classList.add("editing");
+      val.hidden = true;
+      host.insertBefore(box, val);
+      box.focus();
+      if (seed) box.setSelectionRange(seed.length, seed.length); else box.select();
+      say("Type 90, 1:30 or 1h 30m, then Enter");
+      var done = false;
+      function finish(keep, refocus) {
+        if (done) return;
+        done = true;
+        var typed = box.value;
+        editing = null;
+        box.remove(); val.hidden = false; host.classList.remove("editing");
+        if (!keep) { say(""); draw(); if (refocus) val.focus(); return; }
+        var m = parseDuration(typed);
+        if (m === null) { draw(); say("Couldn’t read “" + typed + "”. Try 90 or 1h 30m.", true); }
+        else {
+          var fitted = Math.min(hi(), Math.max(lo(), m));
+          if (fitted !== m) say((m > hi() ? "Longest is " : "Shortest is ") + durationText(fitted) + ", so it’s set to that.", true);
+          else say("");
+          if (!show(fitted)) draw();
+          commit();
+        }
+        // Only a key returns focus here. A click elsewhere means the person
+        // has moved on, and pulling focus back would fight them.
+        if (refocus) val.focus();
+      }
+      box.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); finish(true, true); }      // never submits the dialog
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false, true); }
+      });
+      box.addEventListener("blur", function () { finish(true, false); });
+    }
+
+    durationControls[input.id] = { input: input, draw: sync, busy: function () { return !!editing || pending(); } };
+    draw();
+  }
+
+  function refreshDurationSteppers() {
+    Object.keys(durationControls).forEach(function (id) {
+      var c = durationControls[id];
+      if (c.input.isConnected === false) { delete durationControls[id]; return; }
+      c.draw();
+    });
+  }
+  // A value being held, scrolled or typed is not overwritten by a redraw.
+  function durationBusy(id) { return !!(durationControls[id] && durationControls[id].busy()); }
+
+  function initDurationSteppers() {
+    document.querySelectorAll("[data-stepper]").forEach(mountDurationStepper);
+    document.addEventListener("wheel", function (e) {
+      if (!(e.target && e.target.closest && e.target.closest(".dur-stepper"))) pageWheelAt = Date.now();
+    }, { passive: true });
+  }
+
   // fields: [{ key, label, type: text|date|select|textarea, value, options, required, help, placeholder }]
   function openForm(opts) {
     modalOpen = true;
     var body = "";
     opts.fields.forEach(function (f) {
-      body += '<div class="field" data-field="' + esc(f.key) + '"><label for="f_' + esc(f.key) + '">' + esc(f.label) +
+      body += '<div class="field" data-field="' + esc(f.key) + '"><label id="lbl_f_' + esc(f.key) + '" for="f_' + esc(f.key) + '">' + esc(f.label) +
         (f.required ? "" : " (optional)") + "</label>";
       if (f.type === "select") {
         body += '<select id="f_' + esc(f.key) + '">' + f.options + "</select>";
@@ -2561,18 +2850,12 @@
           (f.max == null ? "" : ' max="' + esc(f.max) + '"') +
           ' step="' + esc(f.step == null ? 1 : f.step) + '" inputmode="numeric">';
       } else if (f.type === "duration") {
-        /* Two number inputs backed by datalists: the arrow offers whole hours
-           and five-minute steps to pick from, and the same box accepts a typed
-           number for anything in between. One control, both habits. */
-        var total = Math.max(0, Number(f.value) || 0);
-        body += '<div class="duration-field">' +
-          '<span class="dur-part"><input type="number" id="f_' + esc(f.key) + '_h" value="' + Math.floor(total / 60) +
-            '" min="0" max="24" step="1" list="durationHours" inputmode="numeric" aria-label="Hours">' +
-            '<label for="f_' + esc(f.key) + '_h">hours</label></span>' +
-          '<span class="dur-part"><input type="number" id="f_' + esc(f.key) + '_m" value="' + (total % 60) +
-            '" min="0" max="59" step="5" list="durationMinutes" inputmode="numeric" aria-label="Minutes">' +
-            '<label for="f_' + esc(f.key) + '_m">min</label></span>' +
-          "</div>";
+        /* The shared duration stepper, over a hidden input that holds the
+           total in minutes. It replaces two bare hours and minutes boxes. */
+        var total = Math.max(0, Math.round(Number(f.value) || 0));
+        body += '<div class="dur-stepper lg" data-stepper data-input="f_' + esc(f.key) + '" data-long="1" data-labelledby="lbl_f_' + esc(f.key) + '"></div>' +
+          '<p class="dur-hint"></p>' +
+          '<input type="hidden" id="f_' + esc(f.key) + '" value="' + total + '" min="' + esc(f.min == null ? 1 : f.min) + '" max="' + esc(f.max == null ? 1440 : f.max) + '">';
       } else if (f.type === "textarea") {
         body += '<textarea id="f_' + esc(f.key) + '" placeholder="' + esc(f.placeholder || "") + '">' + esc(f.value || "") + "</textarea>";
       } else {
@@ -2583,14 +2866,6 @@
       body += '<p class="ferr hidden"></p></div>';
     });
 
-    var lists = "";
-    if (opts.fields.some(function (f) { return f.type === "duration"; })) {
-      lists = '<datalist id="durationHours">' +
-        [0,1,2,3,4,5,6,7,8].map(function (h) { return '<option value="' + h + '">'; }).join("") + "</datalist>" +
-        '<datalist id="durationMinutes">' +
-        [0,5,10,15,20,25,30,35,40,45,50,55].map(function (m) { return '<option value="' + m + '">'; }).join("") + "</datalist>";
-    }
-
     $("modalHost").innerHTML = '<div class="backdrop" data-act="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="' +
       esc(opts.title) + '"><h3>' + esc(opts.title) + "</h3>" +
       (opts.body ? '<p class="mbody">' + esc(opts.body) + "</p>" : "") +
@@ -2599,11 +2874,12 @@
          rejected a typed 37 against a 5-minute step — silently refusing to
          submit a value the field is meant to accept. The step still drives the
          spinner; it no longer decides what is allowed. */
-      '<form id="modalForm" novalidate>' + lists + body +
+      '<form id="modalForm" novalidate>' + body +
       '<div class="actions"><button type="button" data-act="cancel">Cancel</button>' +
       '<button type="submit" class="primary">' + esc(opts.submitLabel || "Save") + "</button></div></form></div></div>";
 
     var form = $("modalForm");
+    if (form.querySelectorAll) form.querySelectorAll("[data-stepper]").forEach(mountDurationStepper);
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
       if (form.dataset.submitted) return;
@@ -2612,10 +2888,8 @@
       opts.fields.forEach(function (f) {
         var v;
         if (f.type === "duration") {
-          var hEl = $("f_" + f.key + "_h"), mEl = $("f_" + f.key + "_m");
-          var hours = Math.max(0, Math.floor(Number(hEl && hEl.value) || 0));
-          var mins = Math.max(0, Math.floor(Number(mEl && mEl.value) || 0));
-          var totalMins = hours * 60 + mins;
+          var dEl = $("f_" + f.key);
+          var totalMins = Math.max(0, Math.round(Number(dEl && dEl.value) || 0));
           v = totalMins > 0 ? String(totalMins) : "";     // empty reads as "not given"
         } else {
           var el = $("f_" + f.key);
@@ -4591,18 +4865,11 @@
   // How late a tick may be and still count as catching the boundary live.
   var PHASE_GRACE_MS = 90000;
 
-  /* Not checkValidity(): step="5" makes the spinner and scroll wheel move in
-     five-minute jumps, and native validation would then call a typed 37 a
-     stepMismatch and silently refuse a perfectly good value. The step is there
-     to make picking pleasant, not to decide what is allowed — the same
-     conclusion the modal duration field reached with novalidate. */
+  /* The last check before a length becomes a setting. The steppers already
+     clamp what they write, so this guards the hidden inputs against anything
+     else that writes them. data-min wins over min where an element has both. */
   function minutesInRange(el) {
     var value = Number(el.value);
-    /* data-min, not min, where the two differ. A number input anchors its step
-       sequence at `min`, so min="1" with step="5" offers 1, 6, 11 and turns a
-       25-minute block into 26 on the first arrow press. The attribute is
-       anchored at zero to keep the sequence on multiples of five, and the real
-       lower bound lives here. */
     var floor = (el.dataset && el.dataset.min != null) ? Number(el.dataset.min) : Number(el.min);
     return el.value !== "" && Number.isInteger(value) &&
       value >= floor && value <= Number(el.max);
@@ -4748,6 +5015,47 @@
     focusReady(run,"focus");
     $("focusMessage").textContent="Break skipped. Ready for the next focus block.";
     persistFocus();
+  }
+
+  /* What a session's lengths add up to, by the rule focusTick runs: a focus
+     block, then a break only when more than a break's worth of session is
+     left, and a last block cut to whatever remains. Kept beside the timer so
+     the preview cannot drift from what the clock will actually do. */
+  function focusPlan(total, focus, brk) {
+    var left = total, out = [];
+    while (left > 0 && focus > 0) {
+      var f = Math.min(focus, left);
+      out.push({ kind: "focus", minutes: f }); left -= f;
+      if (left <= 0) break;
+      if (brk > 0 && left > brk) { out.push({ kind: "break", minutes: brk }); left -= brk; }
+    }
+    return out;
+  }
+  function renderFocusPlan(settings) {
+    var box = $("focusPlan");
+    if (!box || !$("focusPlanText")) return;
+    // Legacy repeat and focus-only budgets end differently; say nothing rather than mislead.
+    if (!settings || settings.repeat || settings.budgetMode !== "session") { box.hidden = true; return; }
+    var plan = focusPlan(settings.totalMinutes, settings.focusMinutes, settings.breakMinutes);
+    var blocks = plan.filter(function (p) { return p.kind === "focus"; });
+    if (!blocks.length) { box.hidden = true; return; }
+    var focused = blocks.reduce(function (n, p) { return n + p.minutes; }, 0), breaks = plan.length - blocks.length;
+    box.hidden = false;
+    $("focusPlanText").innerHTML = "<strong>You’ll focus for " + esc(durationText(focused)) + "</strong>" +
+      (breaks ? " with " + breaks + (breaks === 1 ? " break" : " breaks") : " with no breaks");
+    var bar = $("focusPlanBar");
+    // Past about sixty pieces the bar is noise rather than a picture.
+    bar.hidden = plan.length > 60;
+    bar.classList.toggle("dense", plan.length > 15);
+    bar.innerHTML = plan.length > 60 ? "" : plan.map(function (p) {
+      return '<span class="' + (p.kind === "focus" ? "f" : "b") + '" style="flex:' + p.minutes + '" title="' +
+        (p.kind === "focus" ? "Focus " : "Break ") + esc(durationText(p.minutes)) + '"></span>';
+    }).join("");
+    var last = blocks[blocks.length - 1].minutes, full = blocks.length - 1;
+    $("focusPlanNote").textContent = blocks.length > 1 && last < settings.focusMinutes
+      ? full + (full === 1 ? " block" : " blocks") + " of " + durationText(settings.focusMinutes) + ", then a last one of " +
+        durationText(last) + ", so the session ends on time."
+      : "";
   }
 
   function focusClock(ms) {
@@ -4906,8 +5214,10 @@
     var run=state.focusRun, settings=run && run.status !== "completed" ? run.settings : state.focusSettings || focusDefaults();
     var busy=!!(run && run.status !== "completed");
     [["focusTotal",settings.repeat ? Math.max(60,settings.focusMinutes) : settings.totalMinutes],["focusPeriod",settings.focusMinutes],["focusBreak",settings.breakMinutes]].forEach(function (pair) {
-      var el=$(pair[0]); if (document.activeElement !== el) el.value=pair[1]; el.disabled=busy;
+      var el=$(pair[0]); if (document.activeElement !== el && !durationBusy(pair[0])) el.value=pair[1]; el.disabled=busy;
     });
+    refreshDurationSteppers();
+    renderFocusPlan(settings);
     $("focusTotalLabel").textContent=busy && settings.budgetMode !== "session" ? "Total focus" : "Session length";
     var main=$("focusStart");
     // A ready run with nothing spent yet is a fresh session (a reset makes one),
@@ -4981,7 +5291,7 @@
       {key:"date",label:"Date",type:"date",required:true,value:todayISO()},
       {key:"minutes",label:"Time focused",type:"duration",required:true,value:30,
         requiredMsg:"Enter how long you focused.",
-        help:"Pick from the list or type your own. Focused time only, the same as the timer records — leave out breaks and pauses."},
+        help:"Click the number to type a length. Focused time only, the same as the timer records: leave out breaks and pauses."},
       {key:"target",label:"Client, project or task",type:"select",options:focusTaskOptions(focusAssignment(null))},
       {key:"note",label:"What did you work on?",type:"textarea",placeholder:"Goes straight into your weekly log"}
     ],onSubmit:function (v) {
@@ -5058,6 +5368,10 @@
     window.addEventListener("pagehide",function(){if(focusWindow && !focusWindow.closed)focusWindow.close();});
     document.addEventListener("visibilitychange",function(){if (!document.hidden) focusTick();});
     bindFocusPicker(document,"focus");
+    ["focusTotal","focusPeriod","focusBreak"].forEach(function(id){$(id).addEventListener("input",function(){
+      if (state.focusRun && state.focusRun.status !== "completed") return;
+      renderFocusPlan({totalMinutes:Number($("focusTotal").value),focusMinutes:Number($("focusPeriod").value),breakMinutes:Number($("focusBreak").value),repeat:false,budgetMode:"session"});
+    });});
     ["focusTotal","focusPeriod","focusBreak"].forEach(function(id){$(id).addEventListener("change",function(){
       if (state.focusRun && state.focusRun.status !== "completed") return;
       if (!minutesInRange(this)) {$("focusMessage").textContent="Enter whole minutes within the allowed range.";return;}
@@ -5085,6 +5399,7 @@
   initDownloads();
   initMic();
   initFocus();
+  initDurationSteppers();
 })();
 </script>
 </body>
