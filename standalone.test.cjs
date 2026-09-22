@@ -40,7 +40,7 @@ test('a backup export writes carried fields under their own names, not as a carr
  assert.equal(JSON.stringify(out.workspaces),JSON.stringify([{id:'w1'}]));
  // and the carrier itself never reaches the file, on any record
  [].concat(out.clients,out.projects,out.tasks).forEach(r=>assert.equal('x' in r,false,JSON.stringify(r)));
- assert.equal(out.version,4);
+ assert.equal(out.version,5);
  assert(out.exportedAt);
 });
 test('portable source embeds app logic, style and context without local companion assets',()=>{

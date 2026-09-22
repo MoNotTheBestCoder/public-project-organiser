@@ -95,7 +95,7 @@ test('paused JSON reload excludes downtime and both ticker callbacks record comp
   assert.equal(x.a.state().focusRun.status,'paused');x.a.focusStart();x.advance(50000);
   x.a.focusTick();x.a.focusTick();assert.equal(x.a.state().focusSessions.length,1);
   assert.equal(x.a.state().focusSessions[0].durationMs,60000);
-  assert.equal(x.a.state().focusRun.status,'ready');assert.equal(x.a.serialize().version,4);
+  assert.equal(x.a.state().focusRun.status,'ready');assert.equal(x.a.serialize().version,5);
 });
 test('running JSON reload caps unattended time at one block and preserves exact end timestamp',()=>{
   const x=app();x.a.focusStart();const snapshot=JSON.parse(x.data.get('project-planner-v1'));

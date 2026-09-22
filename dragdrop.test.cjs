@@ -7,6 +7,7 @@ function app() {
   let code=fs.readFileSync('project-planner-1.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1];
   code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
     globalThis.api={makePlannerDrag,validPlannerDrop,applyPlannerDrop,renderTasks,renderProjects,renderClient,renderNav,recoverChange,serialize,
+      visibleClients,dropEdgeFor:(t,y,p)=>dropEdgeFor(t,y,p),
       setStatus,nextOrderFor,findDropTarget,dropEdgeFor,setSearch:x=>searchQuery=x,
       state:()=>state,select:ids=>selectedTasks=new Set(ids),undoCount:()=>undoStack.length,
       setState:x=>{state=normalize(x);historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];},
@@ -60,7 +61,10 @@ test('no-op, missing and unsupported destinations do not mutate or create histor
   assert.equal(a.applyPlannerDrop(a.makePlannerDrag('task','t1'),'p:missing'),false);
   assert.equal(a.applyPlannerDrop(a.makePlannerDrag('project','p1'),'p:p2'),false);
   assert.equal(a.applyPlannerDrop(a.makePlannerDrag('project','p1'),'u:none'),false);
-  assert.equal(a.makePlannerDrag('client','c1'),null);
+  assert.equal(a.applyPlannerDrop(a.makePlannerDrag('client','c1'),'c:c1'),false);   // onto itself
+  assert.equal(a.applyPlannerDrop(a.makePlannerDrag('client','c1'),'p:p1'),false);   // clients only sit beside clients
+  assert.equal(a.applyPlannerDrop(a.makePlannerDrag('client','c1'),'u:none'),false);
+  assert.equal(a.makePlannerDrag('client','missing'),null);
   assert.equal(a.makePlannerDrag('task','missing'),null);
   assert.equal(JSON.stringify(a.serialize()),before);assert.equal(a.undoCount(),0);
 });
@@ -76,7 +80,7 @@ test('queued remote updates block drag start and drop',()=>{
   assert.equal(a.makePlannerDrag('task','t1'),null);assert.equal(a.applyPlannerDrop(payload,'p:p2'),false);
   assert.equal(a.state().tasks[0].projectId,'p1');
 });
-test('rows drag whole with no handle, keep a pointer-free action route, and clients are drop targets only',()=>{
+test('rows drag whole with no handle, keep a pointer-free action route, and cards drag like rows',()=>{
   const {a,element}=app();
   const tasks=a.renderTasks(a.state().tasks,'test','');
   assert.match(tasks,/<div data-task-id="t1" data-drop-target="t:t1" draggable="true" data-drag-kind="task" data-id="t1"/);
@@ -88,7 +92,11 @@ test('rows drag whole with no handle, keep a pointer-free action route, and clie
   const projects=a.renderProjects(a.state().clients[0]);
   assert.match(projects,/<article class="project" data-project-id="p1" data-drop-target="p:p1" draggable="true" data-drag-kind="project" data-id="p1"/);
   assert.doesNotMatch(projects,/drag-handle/);
-  const client=a.renderClient(a.state().clients[0]);assert.match(client,/data-drop-target="c:c1"/);assert.doesNotMatch(client,/data-drag-kind="client"/);
+  const client=a.renderClient(a.state().clients[0]);
+  assert.match(client,/data-client-id="c1" data-drop-target="c:c1" draggable="true" data-drag-kind="client" data-id="c1"/);
+  assert.doesNotMatch(client,/drag-handle/);                     // the whole card, same as a row
+  // the sidebar entry stays a destination only: it is a scope picker, not the board
+  a.renderNav();assert.doesNotMatch(element('clientNav').innerHTML,/data-drag-kind="client"/);
   a.renderNav();assert.match(element('clientNav').innerHTML,/data-drop-target="c:c2"/);
 });
 test('task rows are insertion targets only outside search, where a position has no single meaning',()=>{
@@ -106,6 +114,41 @@ test('a row target inserts before or after, taking the midpoint of its neighbour
   assert.equal(a.state().tasks.find(t=>t.id==='t3').projectId,'p1');   // and re-owned
   assert(a.applyPlannerDrop(a.makePlannerDrag('task','t3'),'t:t1','before'));
   assert.equal(order('t3'),0);                                   // a fresh gap past the first
+});
+test('client cards reorder by dragging, and the sidebar keeps its own busiest-first order',()=>{
+  const {a}=app();
+  a.setState({clients:[{id:'c1',name:'Alpha',order:1000},{id:'c2',name:'Beta',order:2000},{id:'c3',name:'Gamma',order:3000}],
+    projects:[],tasks:[{id:'t1',clientId:'c2',title:'One',status:'To Do'},{id:'t2',clientId:'c2',title:'Two',status:'To Do'}]});
+  // join, not deepEqual: arrays built inside the sandbox do not share a
+  // prototype with this realm, so deepEqual reports "not reference-equal".
+  const board=()=>a.visibleClients().map(c=>c.name).join(',');
+  assert.equal(board(),'Alpha,Beta,Gamma');
+  assert(a.applyPlannerDrop(a.makePlannerDrag('client','c3'),'c:c1','before'));
+  assert.equal(board(),'Gamma,Alpha,Beta');
+  assert(a.applyPlannerDrop(a.makePlannerDrag('client','c3'),'c:c2','after'));
+  assert.equal(board(),'Alpha,Beta,Gamma');
+  // the board order is manual; the sidebar stays sorted by open work
+  a.renderNav();
+  assert.equal(a.undoCount()>0,true);                            // and it is undoable
+});
+test('a client dropped between two sharing an order still separates them',()=>{
+  const {a}=app();
+  a.setState({clients:[{id:'c1',name:'Alpha',order:1000},{id:'c2',name:'Beta',order:1000},{id:'c3',name:'Gamma',order:1000}],
+    projects:[],tasks:[]});
+  assert(a.applyPlannerDrop(a.makePlannerDrag('client','c3'),'c:c1','after'));
+  const order=id=>a.state().clients.find(c=>c.id===id).order;
+  assert(order('c1')<order('c3')&&order('c3')<order('c2'));
+  const all=a.state().clients.map(c=>c.order);
+  assert.equal(new Set(all).size,all.length,'two clients share an order');
+});
+test('a client card has a leading and trailing edge, but only while a client is dragging',()=>{
+  const {a}=app();
+  const card={getAttribute:()=>'c:c1',getBoundingClientRect:()=>({top:0,height:100,bottom:100})};
+  assert.equal(a.dropEdgeFor(card,10,{kind:'client',ids:['c2']}),'before');
+  assert.equal(a.dropEdgeFor(card,90,{kind:'client',ids:['c2']}),'after');
+  // a task or project lands inside the card, so it has no edge
+  assert.equal(a.dropEdgeFor(card,10,{kind:'task',ids:['t1']}),'');
+  assert.equal(a.dropEdgeFor(card,10,{kind:'project',ids:['p1']}),'');
 });
 test('a drop between two tasks that share an order still separates them',()=>{
   const {a}=app();

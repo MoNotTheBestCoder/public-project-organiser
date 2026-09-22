@@ -145,12 +145,6 @@
     font-variant-numeric: tabular-nums;
   }
   .navitem.on .nc { color: var(--rail-ink); }
-  .cdot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--hue, var(--brand)); }
-  .cdot.duo {
-    background: linear-gradient(135deg, var(--hue) 0%, var(--hue) 50%, var(--hue2) 50%, var(--hue2) 100%);
-  }
-  .cdot.muted { background: var(--ink-3); }
-  .cdot.pending { opacity: .4; }
   .navitem .cdot.muted { background: var(--rail-ink-2); }
 
   .rail .check { display: flex; align-items: center; gap: 9px; font-size: 14.5px; color: var(--rail-ink); cursor: pointer; padding: 3px 0; }
@@ -490,10 +484,13 @@
   /* A row target inserts beside itself, so it shows a line rather than a box. */
   .task.drag-over-before { box-shadow: inset 0 2px 0 var(--brand); }
   .task.drag-over-after { box-shadow: inset 0 -2px 0 var(--brand); }
+  .client.drag-over-before { box-shadow: inset 0 3px 0 var(--brand); }
+  .client.drag-over-after { box-shadow: inset 0 -3px 0 var(--brand); }
   .drag-source { opacity: .45; }
   .drag-drop-dock { display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 55; padding: 12px 20px; background: var(--panel); color: var(--ink-2); box-shadow: var(--lift); border: 1px dashed var(--brand); border-radius: 15px; max-width: calc(100vw - 32px); text-align: center; font-size: 13px; }
   body.dragging-task .drag-drop-dock { display: block; }
-  body.dragging-project [data-drop-target^="c:"] { outline: 1px dashed var(--brand); outline-offset: -1px; }
+  body.dragging-project [data-drop-target^="c:"],
+  body.dragging-client [data-drop-target^="c:"] { outline: 1px dashed var(--brand); outline-offset: -1px; }
   body.dragging-project [data-drop-target].drag-over { outline-width: 2px; outline-style: solid; }
   .task-tools { margin: 4px 0 20px; }
   .search-row { display: flex; gap: 12px; align-items: center; }
@@ -764,6 +761,17 @@
   .planner-page-actions button { border-color:var(--line); border-radius:10px; font-size:13px; }
   @media(max-width:600px) { .workspace-tab { min-height:48px; } #navFocusTime { font-size:10px; } .planner-page-actions button { flex:1; } }
 </style>
+<style id="clientDotStyles">
+  /* The client's colour, in one place. The board, the sidebar and the focus
+     picker all use it, and the floating clock builds its stylesheet from named
+     blocks, so this cannot live inside the page-only sheet. */
+  .cdot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--hue, var(--brand)); }
+  .cdot.duo {
+    background: linear-gradient(135deg, var(--hue) 0%, var(--hue) 50%, var(--hue2) 50%, var(--hue2) 100%);
+  }
+  .cdot.muted { background: var(--ink-3); }
+  .cdot.pending { opacity: .4; }
+</style>
 <style id="focusPickerStyles">
   .task-picker { position:relative; text-align:left; margin:0 0 12px; }
   .task-picker > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; list-style:none; padding:13px 14px; border:1px solid var(--line); border-radius:12px; cursor:pointer; background:var(--panel); color:var(--ink); font-size:13px; }
@@ -781,7 +789,10 @@
   .picker-location { margin-bottom:6px; border-bottom:1px solid var(--line-soft); padding-bottom:6px; font-size:12px; }
   .picker-location span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .picker-caption { margin:6px 8px; font-size:11px; color:var(--ink-2); }
-  .picker-task { display:block; width:100%; text-align:left; background:transparent; border:0; border-radius:8px; color:inherit; padding:10px; font:inherit; font-size:13px; cursor:pointer; overflow-wrap:anywhere; }
+  .picker-task { display:flex; align-items:center; gap:9px; width:100%; text-align:left; background:transparent; border:0; border-radius:8px; color:inherit; padding:10px; font:inherit; font-size:13px; cursor:pointer; }
+  .picker-task .cdot { width:9px; height:9px; }
+  .picker-text { flex:1; min-width:0; overflow-wrap:anywhere; }
+  .picker-path::before { content:" \00b7 "; }
   .picker-task:hover,.picker-task:focus-visible { background:var(--brand-soft); }
   .picker-row .picker-task { flex:1; min-width:0; }
   .picker-task[aria-pressed="true"] { background:var(--brand-soft); box-shadow:inset 2px 0 var(--brand); }
@@ -1212,13 +1223,14 @@
      than dropped, so a planner written by a build with more features survives
      a round trip through one with fewer. That is what keeps adding or removing
      a feature later from quietly destroying data. */
-  var SCHEMA_VERSION = 4;
+  var SCHEMA_VERSION = 5;
   //  1  clients, projects and tasks only
   //  2  focus settings, the in-flight run, and logged sessions
   //  3  manual task `order`
   //  4  task `steps`, a checklist of {id, text, done}
+  //  5  client `order`, so the board can be arranged by hand
 
-  var CLIENT_KEYS  = ["id", "name", "status", "accent", "accent2", "brandChecked"];
+  var CLIENT_KEYS  = ["id", "name", "status", "accent", "accent2", "brandChecked", "order"];
   var PROJECT_KEYS = ["id", "clientId", "name", "status"];
   var TASK_KEYS    = ["id", "projectId", "clientId", "title", "status", "dueDate", "note", "notes", "order", "steps"];
   var DOC_KEYS     = ["version", "clients", "projects", "tasks", "focusSettings", "focusRun", "focusSessions"];
@@ -1363,6 +1375,7 @@
         accent: isHex(c.accent) ? String(c.accent).toLowerCase() : "",
         accent2: isHex(c.accent2) ? String(c.accent2).toLowerCase() : "",
         brandChecked: c.brandChecked === true,
+        order: Number.isFinite(c.order) ? Number(c.order) : null,
         x: carryUnknown(c, CLIENT_KEYS)
       });
     });
@@ -1401,6 +1414,17 @@
         x: carryUnknown(t, TASK_KEYS)
       });
     });
+    /* Clients saved before they could be arranged by hand are numbered in the
+       order the file already lists them, so the board looks unchanged on the
+       load that migrates it. */
+    var unplacedClients = next.clients.filter(function (c) { return c.order === null; });
+    if (unplacedClients.length) {
+      var placedClients = next.clients.filter(function (c) { return c.order !== null; });
+      var clientBase = placedClients.length
+        ? placedClients.reduce(function (max, c) { return Math.max(max, c.order); }, -Infinity) : 0;
+      unplacedClients.forEach(function (c, i) { c.order = clientBase + (i + 1) * ORDER_GAP; });
+    }
+
     // One-time placement for tasks saved before `order` existed: sort them by
     // the old comparator and write that sequence down, so the list looks the
     // same on this load but is now draggable. Records that already carry an
@@ -1424,7 +1448,7 @@
      too: these comparisons are string compares of JSON. */
   function blankClient(fields) {
     return Object.assign({ id: newId(), name: "", status: "Active",
-      accent: "", accent2: "", brandChecked: false, x: null }, fields);
+      accent: "", accent2: "", brandChecked: false, order: 0, x: null }, fields);
   }
   function blankProject(fields) {
     return Object.assign({ id: newId(), clientId: "", name: "", status: "Active", x: null }, fields);
@@ -1655,6 +1679,11 @@
     });
     if (!list.length) return ORDER_GAP;
     return list.reduce(function (max, t) { return Math.max(max, t.order); }, -Infinity) + ORDER_GAP;
+  }
+  /* Where a new client lands on the board: at the end, like a new task. */
+  function nextClientOrder() {
+    if (!state.clients.length) return ORDER_GAP;
+    return state.clients.reduce(function (max, c) { return Math.max(max, c.order); }, -Infinity) + ORDER_GAP;
   }
   function maxTaskOrder() {
     if (!state.tasks.length) return 0;
@@ -2161,7 +2190,8 @@
       tasksDirectlyOnClient(c.id).length > 0;
     if (!hasContent && (ckey in openState)) delete openState[ckey];
     isClosed = !hasContent || !isOpen(ckey);
-    return '<section data-drop-target="c:'+esc(c.id)+'" class="client' + (archived ? " archived" : (accent ? " branded" + (duo ? " duo" : "") : "")) + '"' +
+    return '<section data-client-id="'+esc(c.id)+'" data-drop-target="c:'+esc(c.id)+'"' +
+      ' draggable="true" data-drag-kind="client" data-id="'+esc(c.id)+'" class="client' + (archived ? " archived" : (accent ? " branded" + (duo ? " duo" : "") : "")) + '"' +
       (archived ? "" : hueStyle(c)) + ">" +
       '<span class="stripe" aria-hidden="true"></span>' +
       '<div class="row client-row">' +
@@ -2210,10 +2240,13 @@
       "</section>";
   }
 
+  /* Board order is manual, like tasks. The sidebar deliberately does not use
+     it: that list is sorted busiest-first so a long roster shows the five
+     worth showing, which is a different question from where a card sits. */
   function visibleClients() {
     return state.clients.filter(function (c) {
       return filters.showArchived ? true : c.status !== "Archived";
-    });
+    }).sort(function (a, b) { return a.order - b.order; });
   }
 
   var NAV_PREVIEW = 5;          // clients listed before the sidebar folds the rest away
@@ -2652,7 +2685,7 @@
       submitLabel: "Add client",
       fields: [{ key: "name", label: "Client name", required: true, placeholder: "e.g. Acme Retail" }],
       onSubmit: function (v) {
-        var made = blankClient({ name: v.name, accent: nextAccent() });   // distinct from the other clients
+        var made = blankClient({ name: v.name, accent: nextAccent(), order: nextClientOrder() });   // distinct from the other clients
         state.clients.push(made);
         commit();
         toast("Client added.");
@@ -3243,7 +3276,7 @@
     var made = { client: 0, project: 0, task: 0 };
 
     rows.filter(function (r) { return r.kind === "client"; }).forEach(function (r) {
-      var made = blankClient({ name: r.name.trim(), accent: nextAccent() });
+      var made = blankClient({ name: r.name.trim(), accent: nextAccent(), order: nextClientOrder() });
       state.clients.push(made);
       newClientIds[r.key] = made.id;
       made.client++;
@@ -3724,13 +3757,20 @@
   }
   function makePlannerDrag(kind, id) {
     if (mode === "loading" || modalOpen || draft || qaBusy || pendingRemote) return null;
-    if (kind !== "task" && kind !== "project") return null;
-    if (!byId(kind === "task" ? state.tasks : state.projects, id)) return null;
+    if (kind !== "task" && kind !== "project" && kind !== "client") return null;
+    var pool = kind === "task" ? state.tasks : kind === "project" ? state.projects : state.clients;
+    if (!byId(pool, id)) return null;
     var ids = kind === "task" && selectedTasks.has(id) ? Array.from(selectedTasks).filter(function (tid) { return !!byId(state.tasks,tid); }) : [id];
     return {kind:kind, ids:ids, revision:dragRevision()};
   }
   function validPlannerDrop(payload, target) {
     if (!payload || !payload.ids || !payload.ids.length) return false;
+    // A client only ever lands beside another client, never inside anything.
+    if (payload.kind === "client") {
+      if (target.indexOf("c:") !== 0) return false;
+      var overClient = byId(state.clients,target.slice(2));
+      return !!overClient && payload.ids.indexOf(overClient.id) === -1;
+    }
     if (payload.kind === "project") return target.indexOf("c:") === 0 && !!byId(state.clients,target.slice(2));
     if (payload.kind !== "task") return false;
     // A row target inserts beside that task. Dropping onto itself, or onto
@@ -3743,9 +3783,15 @@
       (target.indexOf("c:") === 0 && !!byId(state.clients,target.slice(2)));
   }
 
-  /* Which half of a row the cursor is over. Container targets have no edge. */
-  function dropEdgeFor(target, clientY) {
-    if (!target || String(target.getAttribute("data-drop-target")).indexOf("t:") !== 0) return "";
+  /* Which half of a row the cursor is over. Container targets have no edge,
+     except a client card while another client is being dragged: there the
+     card is the thing being ordered, not a place to drop something into. */
+  function dropEdgeFor(target, clientY, payload) {
+    if (!target) return "";
+    var slot = String(target.getAttribute("data-drop-target"));
+    var ordered = slot.indexOf("t:") === 0 ||
+      (payload && payload.kind === "client" && slot.indexOf("c:") === 0);
+    if (!ordered) return "";
     var box = target.getBoundingClientRect ? target.getBoundingClientRect() : null;
     if (!box || !box.height) return "after";
     return clientY < box.top + box.height / 2 ? "before" : "after";
@@ -3818,10 +3864,47 @@
     toast("Moved " + moving.length + " task" + (moving.length === 1 ? "" : "s") + ". Use Undo to reverse.");
     return true;
   }
+  /* Places dragged client cards beside `over`, on the same fractional-order
+     scheme the task list uses, collision renumbering included. */
+  function applyClientReorder(payload, over, edge) {
+    var moving = payload.ids.map(function (id) { return byId(state.clients,id); });
+    if (!over || moving.some(function (c) { return !c; })) return false;
+
+    var group = visibleClients().filter(function (c) { return payload.ids.indexOf(c.id) === -1; });
+    var at = group.indexOf(over) + (edge === "before" ? 0 : 1);
+    if (at < 0) at = group.length;
+    var seq = moving.slice().sort(function (a, b) { return a.order - b.order; });
+    var before = group[at - 1], after = group[at];
+    var span = ORDER_GAP * (seq.length + 1);
+    var lo = before ? before.order : (after ? after.order - span : 0);
+    var hi = after ? after.order : lo + span;
+    var step = (hi - lo) / (seq.length + 1);
+
+    var changed = 0, keys = [];
+    if (isFinite(step) && step > 0) {
+      seq.forEach(function (c, i) { keys[i] = lo + step * (i + 1); });
+    } else {
+      // Neighbours sharing an order leave no gap to land in; renumber instead.
+      var merged = group.slice(0, at).concat(seq, group.slice(at));
+      merged.forEach(function (c, i) {
+        var key = ORDER_GAP * (i + 1), where = seq.indexOf(c);
+        if (where !== -1) { keys[where] = key; return; }
+        if (c.order !== key) { c.order = key; changed++; }
+      });
+    }
+    seq.forEach(function (c, i) { if (c.order !== keys[i]) { c.order = keys[i]; changed++; } });
+    if (!changed) { toast("Already in that position."); return false; }
+
+    commit();
+    toast("Moved " + seq.length + " client" + (seq.length === 1 ? "" : "s") + ". Use Undo to reverse.");
+    return true;
+  }
+
   function applyPlannerDrop(payload, target, edge) {
     if (mode === "loading" || modalOpen || draft || qaBusy || pendingRemote) { toast("Finish your current edits or sync before moving items."); return false; }
     if (!validPlannerDrop(payload,target)) return false;
     if (payload.revision !== dragRevision()) { toast("The planner changed while dragging. Try the move again."); return false; }
+    if (payload.kind === "client") return applyClientReorder(payload, byId(state.clients,target.slice(2)), edge);
     if (target.indexOf("t:") === 0) return applyTaskReorder(payload, byId(state.tasks,target.slice(2)), edge);
     var destination = target === "u:none" ? "" : target;
     var changed = 0;
@@ -3871,7 +3954,8 @@
     if (!plannerDrag || !ev.dataTransfer) { ev.preventDefault(); plannerDrag=null; return; }
     ev.dataTransfer.effectAllowed = "move";
     ev.dataTransfer.setData("application/x-project-planner",JSON.stringify({kind:plannerDrag.kind,ids:plannerDrag.ids}));
-    var source = handle.closest(plannerDrag.kind === "task" ? "[data-task-id]" : "[data-project-id]");
+    var source = handle.closest(plannerDrag.kind === "task" ? "[data-task-id]"
+      : plannerDrag.kind === "project" ? "[data-project-id]" : "[data-client-id]");
     if (source && ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(source,12,12);
     if (source) source.classList.add("drag-source");
     document.body.classList.add("dragging-"+plannerDrag.kind);
@@ -3879,7 +3963,7 @@
   document.addEventListener("dragover", function (ev) {
     if (!plannerDrag) return;
     var target = findDropTarget(ev.target, plannerDrag);
-    var edge = dropEdgeFor(target, ev.clientY);
+    var edge = dropEdgeFor(target, ev.clientY, plannerDrag);
     if (plannerDropHighlight !== target || plannerDropEdge !== edge) {
       if (plannerDropHighlight) plannerDropHighlight.classList.remove("drag-over","drag-over-before","drag-over-after");
       plannerDropHighlight=target; plannerDropEdge=edge;
@@ -3894,7 +3978,7 @@
     var payload=plannerDrag;
     var target=findDropTarget(ev.target, payload);
     var destination=target ? target.getAttribute("data-drop-target") : "";
-    var edge=dropEdgeFor(target, ev.clientY);
+    var edge=dropEdgeFor(target, ev.clientY, payload);
     clearPlannerDrag();
     if (target) applyPlannerDrop(payload,destination,edge);
   });
@@ -4358,7 +4442,17 @@
       // Only tooltip what the row does not already say. A client row's path is
       // just its own name, so the tooltip sat on top of the next row for nothing.
       var path=focusAssignmentPath(a),label=focusAssignmentTitle(a);
-      out+='<div class="picker-row"><button type="button" class="picker-task" data-focus-pick="'+esc(value)+'" aria-pressed="'+selected+'"'+(path!==label ? ' title="'+esc(path)+'"' : '')+'><span>'+esc(label)+'</span><small>'+type+(q && type!=="Client" ? ' · '+esc([a.clientName,a.projectName].filter(Boolean).join(' / ')) : '')+'</small></button>';
+      /* The client's own colour, the same dot the board and sidebar use. It
+         places a row at a glance, which is what the subtext was doing in a
+         whole extra line — and the mini window can then drop that line. */
+      var owner=a.clientId ? byId(state.clients,a.clientId) : null;
+      var accent=owner && owner.status!=="Archived" ? accentOf(owner) : "";
+      var where=q && type!=="Client" ? esc([a.clientName,a.projectName].filter(Boolean).join(' / ')) : '';
+      out+='<div class="picker-row"><button type="button" class="picker-task" data-focus-pick="'+esc(value)+'" aria-pressed="'+selected+'"'+(path!==label ? ' title="'+esc(path)+'"' : '')+(accent ? hueStyle(owner) : '')+'>'+
+        '<span class="cdot'+(accent ? (accent2Of(owner) ? ' duo' : '') : ' muted')+'" aria-hidden="true"></span>'+
+        '<span class="picker-text"><span>'+esc(label)+'</span>'+
+        '<small'+(where ? ' class="has-path"' : '')+'><span class="picker-type">'+type+'</span>'+(where ? '<span class="picker-path">'+where+'</span>' : '')+'</small>'+
+        '</span></button>';
       if(browse)out+='<button type="button" class="picker-browse" data-focus-browse="'+esc(value)+'" aria-label="Browse '+esc(focusAssignmentTitle(a))+'" title="Browse '+esc(focusAssignmentTitle(a))+'">'+arrow+'</button>';
       out+='</div>';
     }
@@ -4567,7 +4661,7 @@
       var doc=opened.document;
       doc.documentElement.lang="en";
       var style=doc.createElement("style");
-      style.textContent=$("plannerThemeTokens").textContent+"*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--canvas);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center}main{max-width:420px;margin:auto}#floatRing{--remaining:100%;width:184px;height:184px;border-radius:50%;padding:5px;margin:0 auto 18px;background:conic-gradient(var(--brand) var(--remaining),var(--line) 0)}.float-dial{height:100%;border-radius:50%;background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center}#floatPhase{color:var(--ink-2);font-size:9px;font-weight:700;letter-spacing:1.5px}#floatClock{font-size:46px;line-height:1.4;font-weight:550;letter-spacing:-2px;font-variant-numeric:tabular-nums}label{display:block;text-align:left;color:var(--ink-2);font-size:11px;margin:12px 0 6px}#floatNote{display:block;width:100%;resize:vertical;min-height:66px;max-height:180px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--ink);font:inherit;font-size:13px;padding:10px;margin:0 0 14px}.buttons{display:flex;justify-content:center;gap:8px}button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:transparent;color:var(--ink);cursor:pointer}#floatStart{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:600}button:disabled{opacity:.4;cursor:default}button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:3px}.hint{font-size:10px;color:var(--ink-2);line-height:1.5;margin-bottom:0}"+$("focusPickerStyles").textContent+"*{box-sizing:border-box}body{padding:10px 14px;font-size:13px}main{max-width:360px}#floatRing{width:132px;height:132px;padding:4px;margin:0 auto 8px}#floatClock{font-size:35px;letter-spacing:-1px}#floatPhase{font-size:8px;letter-spacing:1px}.task-picker{margin-bottom:8px}.task-picker>summary{padding:8px 10px;font-size:12px;gap:8px;min-height:34px}.task-picker>summary span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.picker-panel{position:fixed;z-index:2;inset:8px 10px auto;margin:0;max-height:calc(100vh - 16px);overflow:hidden;box-shadow:var(--lift)}.picker-results{max-height:calc(100vh - 128px);min-height:130px}.picker-panel input{padding:7px;font-size:12px}.picker-row{gap:2px}.picker-task{padding:7px 9px;font-size:12px;border-radius:7px}.picker-task small{margin-top:1px;font-size:10px}.picker-browse,.picker-back{width:28px;height:28px;padding:6px}.picker-caption{margin:4px 8px}.picker-clear{margin-top:4px}#floatNote{height:34px;min-height:34px;max-height:80px;resize:none;padding:8px 10px;margin:0 0 10px;font-size:12px;line-height:16px;border-radius:10px;transition:height .15s}#floatNote:focus{height:66px}.buttons{gap:7px}.buttons button{padding:8px 12px;font-size:12px;border-radius:10px}.hint{font-size:9px;margin:10px 0 0}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.ui-chevron{flex:none;transition:transform .15s}.task-picker[open]>summary>.ui-chevron{transform:rotate(180deg)}";
+      style.textContent=$("plannerThemeTokens").textContent+$("clientDotStyles").textContent+"*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--canvas);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center}main{max-width:420px;margin:auto}#floatRing{--remaining:100%;width:184px;height:184px;border-radius:50%;padding:5px;margin:0 auto 18px;background:conic-gradient(var(--brand) var(--remaining),var(--line) 0)}.float-dial{height:100%;border-radius:50%;background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center}#floatPhase{color:var(--ink-2);font-size:9px;font-weight:700;letter-spacing:1.5px}#floatClock{font-size:46px;line-height:1.4;font-weight:550;letter-spacing:-2px;font-variant-numeric:tabular-nums}label{display:block;text-align:left;color:var(--ink-2);font-size:11px;margin:12px 0 6px}#floatNote{display:block;width:100%;resize:vertical;min-height:66px;max-height:180px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--ink);font:inherit;font-size:13px;padding:10px;margin:0 0 14px}.buttons{display:flex;justify-content:center;gap:8px}button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:transparent;color:var(--ink);cursor:pointer}#floatStart{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:600}button:disabled{opacity:.4;cursor:default}button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:3px}.hint{font-size:10px;color:var(--ink-2);line-height:1.5;margin-bottom:0}"+$("focusPickerStyles").textContent+"*{box-sizing:border-box}body{padding:10px 14px;font-size:13px}main{max-width:360px}#floatRing{width:132px;height:132px;padding:4px;margin:0 auto 8px}#floatClock{font-size:35px;letter-spacing:-1px}#floatPhase{font-size:8px;letter-spacing:1px}.task-picker{margin-bottom:8px}.task-picker>summary{padding:8px 10px;font-size:12px;gap:8px;min-height:34px}.task-picker>summary span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.picker-panel{position:fixed;z-index:2;inset:8px 10px auto;margin:0;max-height:calc(100vh - 16px);overflow:hidden;box-shadow:var(--lift)}.picker-results{max-height:calc(100vh - 128px);min-height:130px}.picker-panel input{padding:7px;font-size:12px}.picker-row{gap:2px}.picker-task{padding:7px 9px;font-size:12px;border-radius:7px;gap:7px}.picker-task small{margin-top:0;font-size:10px}.picker-type{display:none}.picker-path::before{content:none}.picker-task small:not(.has-path){display:none}.picker-browse,.picker-back{width:28px;height:28px;padding:6px}.picker-caption{margin:4px 8px}.picker-clear{margin-top:4px}#floatNote{height:34px;min-height:34px;max-height:80px;resize:none;padding:8px 10px;margin:0 0 10px;font-size:12px;line-height:16px;border-radius:10px;transition:height .15s}#floatNote:focus{height:66px}.buttons{gap:7px}.buttons button{padding:8px 12px;font-size:12px;border-radius:10px}.hint{font-size:9px;margin:10px 0 0}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.ui-chevron{flex:none;transition:transform .15s}.task-picker[open]>summary>.ui-chevron{transform:rotate(180deg)}";
       doc.head.appendChild(style);
       doc.documentElement.setAttribute("data-theme",currentTheme);
       doc.body.innerHTML='<main><div id="floatRing"><div class="float-dial"><div id="floatPhase"></div><div id="floatClock" role="timer" aria-label="Time remaining"></div></div></div><details class="task-picker" id="floatPicker"><summary><span id="floatPickerLabel">Attach client, project or task</span><svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="picker-panel"><div class="picker-searchbar"><input type="search" id="floatPickerSearch" aria-label="Find focus assignment" placeholder="Search tasks, projects or clients…" autocomplete="off"><button type="button" class="picker-close" data-focus-close aria-label="Close assignment picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div><div class="picker-results" id="floatPickerResults"></div></div></details><label class="sr" for="floatNote">Quick note for this focus block</label><textarea id="floatNote" rows="1" maxlength="4000" placeholder="Quick note…"></textarea><div class="buttons"><button id="floatStart">Start</button><button id="floatFinish">End session</button></div><p class="hint">Keep planner open in the background.'+(useWindow ? '<br>This mini window does not stay on top automatically.' : '')+'</p></main>';

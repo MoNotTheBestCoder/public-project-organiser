@@ -116,8 +116,9 @@ format is built to outlive the feature set, in both directions:
 
 - **Older file, newer app.** `migrate()` runs any registered step, then `normalize()`
   supplies defaults for anything absent. Versions 2 and 3 needed no migration entry because
-  their additions (focus records, task `order`) default themselves, and version 4
-  (task `steps`) needs none either. A v1 file with no version field at all still loads.
+  their additions (focus records, task `order`) default themselves, and versions 4
+  (task `steps`) and 5 (client `order`) need none either. A v1 file with no version
+  field at all still loads.
 - **Newer file, older app.** Fields this build does not recognise are carried through
   rather than dropped. `normalize()` collects them per record into a non-enumerated `x`
   carrier and `serialize()` puts them back, so exporting from a build with more features,
