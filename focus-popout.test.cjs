@@ -208,6 +208,33 @@ test('invalid, deleted and remote-pending selections preserve current assignment
  x.a.pending({});assert.equal(x.a.updateFocusDetail('target','p:same'),false);x.a.pending(null);
  x.a.state().clients=[];x.a.focusStart();assert.equal(x.a.state().focusRun,null);
 });
+test('the setup fields accept any whole number of minutes, not only multiples of the step',()=>{
+ const x=app(); x.a.initFocus();
+ // The arrows step by five so scrolling is pleasant, but native validation
+ // would then call a typed 37 a stepMismatch and refuse it silently.
+ // min is anchored at 0 so the five-minute step sequence lands on multiples
+ // of five; data-min carries the bound that is actually enforced.
+ const bounds={focusTotal:[1,1440],focusPeriod:[1,180],focusBreak:[0,60]};
+ for(const id of Object.keys(bounds)){const el=x.element(id);el.min='0';el.max=String(bounds[id][1]);el.dataset={min:String(bounds[id][0])};}
+ const total=x.element('focusTotal'), block=x.element('focusPeriod'), rest=x.element('focusBreak');
+ total.value='90'; block.value='37'; rest.value='5';
+ block.listeners.change.call(block);
+ assert.equal(x.a.state().focusSettings.focusMinutes,37,'a typed 37 was refused');
+ assert.equal(x.a.state().focusSettings.totalMinutes,90);
+ // out of range is still refused, and leaves the last good settings alone
+ block.value='400';
+ block.listeners.change.call(block);
+ assert.equal(x.a.state().focusSettings.focusMinutes,37);
+ // so is a fraction, and so is an empty box
+ block.value='12.5'; block.listeners.change.call(block);
+ assert.equal(x.a.state().focusSettings.focusMinutes,37);
+ block.value=''; block.listeners.change.call(block);
+ assert.equal(x.a.state().focusSettings.focusMinutes,37);
+ // a break of zero is legitimate and must not be read as empty
+ block.value='25'; rest.value='0';
+ rest.listeners.change.call(rest);
+ assert.equal(x.a.state().focusSettings.breakMinutes,0);
+});
 test('changing level during a break prepares the next block without rewriting previous work',()=>{
  const x=app();x.a.restore(workFixture());x.a.updateFocusDetail('target','c:same');
  x.element('focusTotal').value='3';x.element('focusPeriod').value='1';x.element('focusBreak').value='1';

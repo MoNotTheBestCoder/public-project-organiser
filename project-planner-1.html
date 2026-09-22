@@ -929,9 +929,18 @@
         </div>
         <div class="focus-setup">
           <div class="focus-duration-fields">
-            <label for="focusTotal"><span id="focusTotalLabel">Session length</span><div class="focus-number"><input id="focusTotal" type="number" inputmode="numeric" min="1" max="1440" step="1" value="60"><span>min</span></div></label>
-            <label for="focusPeriod"><span>Focus block</span><div class="focus-number"><input id="focusPeriod" type="number" inputmode="numeric" min="1" max="180" step="1" value="25"><span>min</span></div></label>
-            <label for="focusBreak"><span>Break</span><div class="focus-number"><input id="focusBreak" type="number" inputmode="numeric" min="0" max="60" step="1" value="5"><span>min</span></div></label>
+            <label for="focusTotal"><span id="focusTotalLabel">Session length</span><div class="focus-number"><input id="focusTotal" type="number" inputmode="numeric" min="0" data-min="1" max="1440" step="5" list="sessionMinutes" value="60"><span>min</span></div></label>
+            <label for="focusPeriod"><span>Focus block</span><div class="focus-number"><input id="focusPeriod" type="number" inputmode="numeric" min="0" data-min="1" max="180" step="5" list="blockMinutes" value="25"><span>min</span></div></label>
+            <label for="focusBreak"><span>Break</span><div class="focus-number"><input id="focusBreak" type="number" inputmode="numeric" min="0" max="60" step="5" list="breakMinutes" value="5"><span>min</span></div></label>
+            <!-- The arrows step by five; these are the values worth jumping
+                 straight to. A break spans its whole range in fives, a focus
+                 block does so where it matters and then thins out, and a
+                 session length offers the lengths people actually pick rather
+                 than 288 five-minute rows up to a full day. Typing any whole
+                 number in range still works; see minutesInRange. -->
+            <datalist id="sessionMinutes"><option value="15"><option value="30"><option value="45"><option value="60"><option value="75"><option value="90"><option value="120"><option value="150"><option value="180"><option value="240"><option value="300"><option value="360"></datalist>
+            <datalist id="blockMinutes"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"><option value="35"><option value="40"><option value="45"><option value="50"><option value="55"><option value="60"><option value="75"><option value="90"><option value="120"></datalist>
+            <datalist id="breakMinutes"><option value="0"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"><option value="45"><option value="60"></datalist>
           </div>
           <label class="focus-label">What are you working on?</label><input id="focusTask" type="hidden" value="">
           <details class="task-picker" id="focusPicker"><summary><span id="focusPickerLabel">Attach client, project or task</span><svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="picker-panel"><div class="picker-searchbar"><input type="search" id="focusPickerSearch" aria-label="Find focus assignment" placeholder="Search tasks, projects or clients…" autocomplete="off"><button type="button" class="picker-close" data-focus-close aria-label="Close assignment picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div><div class="picker-results" id="focusPickerResults"></div></div></details>
@@ -4561,6 +4570,23 @@
   // How late a tick may be and still count as catching the boundary live.
   var PHASE_GRACE_MS = 90000;
 
+  /* Not checkValidity(): step="5" makes the spinner and scroll wheel move in
+     five-minute jumps, and native validation would then call a typed 37 a
+     stepMismatch and silently refuse a perfectly good value. The step is there
+     to make picking pleasant, not to decide what is allowed — the same
+     conclusion the modal duration field reached with novalidate. */
+  function minutesInRange(el) {
+    var value = Number(el.value);
+    /* data-min, not min, where the two differ. A number input anchors its step
+       sequence at `min`, so min="1" with step="5" offers 1, 6, 11 and turns a
+       25-minute block into 26 on the first arrow press. The attribute is
+       anchored at zero to keep the sequence on multiples of five, and the real
+       lower bound lives here. */
+    var floor = (el.dataset && el.dataset.min != null) ? Number(el.dataset.min) : Number(el.min);
+    return el.value !== "" && Number.isInteger(value) &&
+      value >= floor && value <= Number(el.max);
+  }
+
   function focusReady(run, phase) {
     run.phase = phase; run.status = "ready"; run.intervals=[]; run.anchorAt=0;
     run.segmentMs = phase === "break" ? run.settings.breakMinutes*60000 : (run.settings.repeat ? run.settings.focusMinutes*60000 : Math.min(run.settings.focusMinutes*60000,focusBudgetRemaining(run)));
@@ -4943,7 +4969,7 @@
     bindFocusPicker(document,"focus");
     ["focusTotal","focusPeriod","focusBreak"].forEach(function(id){$(id).addEventListener("change",function(){
       if (state.focusRun && state.focusRun.status !== "completed") return;
-      if (!this.checkValidity()) {$("focusMessage").textContent="Enter minutes within the allowed range.";return;}
+      if (!minutesInRange(this)) {$("focusMessage").textContent="Enter whole minutes within the allowed range.";return;}
       state.focusSettings=normalizeFocusSettings({totalMinutes:$("focusTotal").value,focusMinutes:$("focusPeriod").value,breakMinutes:$("focusBreak").value,repeat:false});
       state.focusRun=null; persistFocus();
     });});
