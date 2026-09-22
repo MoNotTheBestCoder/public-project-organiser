@@ -173,6 +173,35 @@ test('empty clients/projects are selectable, hierarchy browses by ID and search 
  const duplicates=x.a.focusPickerResults('Task A');assert(duplicates.includes('t:same'));assert(duplicates.includes('t:other'));assert(duplicates.includes('Client A / Project A'));
  assert(x.a.focusPickerResults('<missing>').includes('No matches'));
 });
+test('a finished task is not offered as something to start focusing on',()=>{
+ const x=app();
+ const doc=workFixture();
+ doc.tasks.push({id:'finished',projectId:'same',clientId:'same',title:'Already handled',status:'Done'});
+ x.a.restore(doc);
+ // browsing, and searching by its exact name
+ assert(!x.a.focusPickerResults('').includes('data-focus-pick="t:finished"'));
+ assert(!x.a.focusPickerResults('Already handled').includes('data-focus-pick="t:finished"'));
+ assert(!x.a.focusPickerResults('','p:same').includes('data-focus-pick="t:finished"'));
+ assert(x.a.focusPickerResults('','p:same').includes('data-focus-pick="t:same"'));   // open work still listed
+ // unless it is what the run is attached to: the clock would lose its label.
+ // The top level lists only unassigned work, so look where this one lives.
+ x.element('focusTask').value='t:finished';
+ assert(x.a.focusPickerResults('','p:same').includes('data-focus-pick="t:finished"'));
+ assert(x.a.focusPickerResults('Already handled').includes('data-focus-pick="t:finished"'));
+ // the session log dialogs are separate, and still offer finished work
+ assert(x.a.focusTaskOptions(x.a.focusTargetAssignment('t:finished')).includes('Already handled'));
+});
+test('a picker row is not given a tooltip repeating what it already says',()=>{
+ const x=app();x.a.restore(workFixture());
+ // The tooltip sat on top of the row below it, which in the mini window is a
+ // large share of what is visible.
+ const clients=x.a.focusPickerResults('');
+ assert(clients.includes('data-focus-pick="c:same"'));
+ assert(!/class="picker-task"[^>]*title=/.test(clients),'a client row still carries a tooltip');
+ // a nested row keeps one, because the path says more than the row does
+ const nested=x.a.focusPickerResults('Task A');
+ assert(/title="Client A \/ Project A \/ Task A"/.test(nested),'a nested row lost the path tooltip');
+});
 test('invalid, deleted and remote-pending selections preserve current assignment and notes',()=>{
  const x=app();x.a.restore(workFixture());x.a.updateFocusDetail('target','c:same');x.a.updateFocusDetail('note','General planning');
  assert.equal(x.a.updateFocusDetail('target','p:deleted'),false);assert.equal(x.element('focusTask').value,'c:same');assert.equal(x.element('focusNote').value,'General planning');

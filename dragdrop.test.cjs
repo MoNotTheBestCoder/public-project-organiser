@@ -107,6 +107,20 @@ test('a row target inserts before or after, taking the midpoint of its neighbour
   assert(a.applyPlannerDrop(a.makePlannerDrag('task','t3'),'t:t1','before'));
   assert.equal(order('t3'),0);                                   // a fresh gap past the first
 });
+test('a drop between two tasks that share an order still separates them',()=>{
+  const {a}=app();
+  // Imports and merges can land two tasks on the same order, leaving no gap to
+  // take the midpoint of. The drop has to renumber rather than stack.
+  a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Report'}],
+    tasks:[{id:'t1',title:'One',projectId:'p1',clientId:'c1',order:1000},
+           {id:'t2',title:'Two',projectId:'p1',clientId:'c1',order:1000},
+           {id:'t3',title:'Three',clientId:'c1',order:5000}]});
+  const order=id=>a.state().tasks.find(t=>t.id===id).order;
+  assert.deepEqual([order('t1'),order('t2')],[1000,1000]);
+  assert(a.applyPlannerDrop(a.makePlannerDrag('task','t3'),'t:t1','after'));
+  assert(order('t1')<order('t3')&&order('t3')<order('t2'));
+  assert.equal(a.state().tasks.find(t=>t.id==='t3').projectId,'p1');
+});
 test('a drag batch keeps its own relative order when inserted',()=>{
   const {a}=app();a.select(['t1','t3']);
   assert(a.applyPlannerDrop(a.makePlannerDrag('task','t1'),'t:t2','after'));

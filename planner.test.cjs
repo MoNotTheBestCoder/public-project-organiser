@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -29,7 +29,7 @@ test('manual add uses correct assignment',()=>{const {a,ctx}=app();a.setState(fi
 test('chat import validates atomically and preserves original message',()=>{const {a,element}=app();a.setState(fixture());element('qaInput').value='brain dump';for(const invalid of ['not json','{}','[{"action":"delete","title":"x"}]','[{"action":"task","title":"x","dueDate":"2026-02-30"}]']){element('draftJson').value=invalid;a.loadChatDrafts();assert.equal(a.getDraft(),null);assert.equal(a.state().tasks.length,15);assert.equal(element('qaInput').value,'brain dump');}});
 test('draft review, note edit, removal and repeated approval',()=>{const {a,element}=app();a.setState(fixture());element('draftJson').value='```json\n[{"action":"task","title":"One","projectId":"p1"},{"action":"task","title":"Two"}]\n```';a.loadChatDrafts();assert.equal(a.state().tasks.length,15);a.getDraft()[0].note='Legal';a.setDraft(a.getDraft().slice(0,1));a.confirmDraft();a.confirmDraft();assert.equal(a.state().tasks.length,16);assert.equal(a.state().tasks.at(-1).note,'Legal');});
 test('unknown and ambiguous assignments remain unassigned',()=>{const {a}=app();const f=fixture();f.projects.push({id:'p2',clientId:'c2',name:'Build'});a.setState(f);const rows=a.toDraftRows([{action:'task',title:'x',projectName:'Build'},{action:'task',title:'y',projectId:'invented'}]);assert(rows.every(r=>r.target===''));});
-test('context included, saved, reloaded with current tasks and date',()=>{const {a,element}=app();a.setState(fixture());a.initContext();element('contextInput').value='# Alias\nAC means Alpha';a.saveContext();element('contextInput').value='';a.initContext();const prompt=a.buildPrompt('Send scope');assert(prompt.includes('AC means Alpha'));assert(prompt.includes('Task 14'));assert(prompt.includes('Send scope'));});
+test('context included, saved, reloaded with current tasks and date',()=>{const {a,element}=app();a.setState(fixture());a.initContext();element('contextInput').value='# Alias\nAC means Alpha';a.saveContext();element('contextInput').value='';a.initContext();const prompt=a.buildPrompt('Send scope for Alpha');assert(prompt.includes('AC means Alpha'));assert(prompt.includes('Task 14'));assert(prompt.includes('Send scope'));});
 test('Claude adapter yields review rows without saving',async()=>{const {a,ctx,element}=app();a.setState(fixture());ctx.claude={use:async()=>({json:async()=>[{action:'task',title:'Claude draft'}]})};await a.initSample();element('qaInput').value='Draft';await a.quickAddDraft();assert.equal(a.getDraft()[0].title,'Claude draft');assert.equal(a.state().tasks.length,15);});
 test('AI feature boundary routes tiers and cancellation without exposing a generic request',async()=>{
  const {a,ctx}=app(); const requests=[], capabilities=[];
@@ -327,6 +327,121 @@ test('a backup written before a field existed still loads',()=>{
  assert.equal(out.tasks[0].order,1000);              // placed by the migration
  assert.equal(out.focusSettings.focusMinutes,25);    // defaulted
  assert.equal(JSON.stringify(out.focusSessions),'[]');
+});
+test('a project whose client is missing is kept and filed under Unassigned',()=>{
+ const {a,ctx}=app();a.capture();
+ // Dropping it took a project, its name and its grouping out of the document
+ // silently. Its tasks already survived; the project itself did not.
+ a.setState({version:4,clients:[{id:'c1',name:'Alpha'}],
+  projects:[{id:'p1',clientId:'c1',name:'Build'},{id:'p2',clientId:'GONE',name:'Q4 Restructure'}],
+  tasks:[{id:'t1',projectId:'p2',clientId:'GONE',title:'Board paper',notes:'the important one'},
+         {id:'t2',projectId:'p1',clientId:'c1',title:'Normal task'}]});
+ assert.equal(a.state().projects.length,2);
+ const orphan=a.state().projects.find(p=>p.id==='p2');
+ assert.equal(orphan.name,'Q4 Restructure');
+ assert.equal(orphan.clientId,'');                       // no client, not deleted
+ assert.equal(JSON.stringify(a.unassignedProjects().map(p=>p.id)),JSON.stringify(['p2']));
+ const task=a.state().tasks.find(t=>t.id==='t1');
+ assert.equal(task.projectId,'p2');                      // still in its project
+ assert.equal(task.clientId,'');
+ assert.equal(task.notes,'the important one');
+ let html=a.renderUnassigned();
+ assert(html.includes('Q4 Restructure'),'the orphaned project renders nowhere');
+ assert(html.includes('1 open task'),'its task is not counted in the card');
+ a.setOpenKey('p:p2');                                   // a project card opens like any other
+ html=a.renderUnassigned();
+ assert(html.includes('Board paper'));
+ assert(a.renderClient(a.state().clients[0]).includes('Build'));   // and Alpha is untouched
+ assert(!a.renderClient(a.state().clients[0]).includes('Q4 Restructure'));
+ // and it is a destination a task can be filed into
+ a.editItem('task','t2');
+ assert(ctx.form.fields.find(f=>f.key==='target').options.includes('Q4 Restructure'));
+});
+test('the drafting request carries relevant open tasks, not the whole planner',()=>{
+ const {a}=app();
+ a.setState({clients:[{id:'c1',name:'Alpha'},{id:'c2',name:'Beta'}],
+  projects:[{id:'p1',clientId:'c2',name:'Market Analysis'}],
+  tasks:[{id:'open',clientId:'c1',title:'ALPHA_OPEN',status:'To Do'},
+         {id:'done',clientId:'c1',title:'ALPHA_DONE',status:'Done'},
+         {id:'other',clientId:'c2',title:'BETA_WORK',status:'To Do'},
+         {id:'loose',title:'NO_HOME_YET',status:'To Do'}]});
+ const named=a.buildPrompt('spoke to Alpha this morning');
+ assert(named.includes('ALPHA_OPEN'),'work under the named client is missing');
+ assert(named.includes('NO_HOME_YET'),'unassigned work must always come along');
+ assert(!named.includes('ALPHA_DONE'),'finished work is still being sent');
+ assert(!named.includes('BETA_WORK'),'an unmentioned client\u2019s work is still being sent');
+ // naming a project names its client
+ assert(a.buildPrompt('finish the Market Analysis deck').includes('BETA_WORK'));
+ // a note naming nobody still carries unassigned work, and nothing else
+ const vague=a.buildPrompt('call went fine');
+ assert(vague.includes('NO_HOME_YET'));
+ assert(!vague.includes('ALPHA_OPEN')&&!vague.includes('BETA_WORK'));
+ // short names must not match inside longer words
+ assert(!a.buildPrompt('we need to alphabetise the index').includes('ALPHA_OPEN'));
+ // and the model is told the view is partial, so it does not assume a gap
+ assert(/filtered view/i.test(named));
+ // the readable id lists stay: the rules tell the model to copy ids from them
+ assert(named.includes('- id: c1 | name: Alpha'));
+});
+test('an absurd version in a backup does not spin the migration loop',()=>{
+ const {a}=app();
+ // A hand-edited or corrupt version used to run the migration loop from that
+ // number up to the current one, freezing the tab before the import dialog
+ // appeared. -5e6 is the mild case that still returns unfixed (about three
+ // seconds) so this fails rather than hanging the suite; a real corrupt file
+ // can carry -2e9 and never come back at all.
+ const started=Date.now();
+ const out=a.normalize({version:-5e6,clients:[{id:'c1',name:'Alpha'}],projects:[],tasks:[]});
+ assert(Date.now()-started<1000,'normalize took '+(Date.now()-started)+'ms');
+ assert.equal(out.clients.length,1);
+ assert.equal(a.serialize().version,a.SCHEMA());
+ assert.equal(a.normalize({version:1e9,clients:[],projects:[],tasks:[]}).clients.length,0);
+});
+test('a record made in the Add dialogs serialises the same before and after a reload',()=>{
+ const {a,ctx}=app();a.setState({clients:[],projects:[],tasks:[]});a.capture();
+ // Not cosmetic: commit() and the remote-sync check compare serialized JSON,
+ // so a record whose shape differs from normalize's reads as a foreign edit.
+ a.addClient(); ctx.form.onSubmit({name:'Alpha'});
+ a.addProject(); ctx.form.onSubmit({name:'Build',clientId:a.state().clients[0].id});
+ a.addTask(); ctx.form.onSubmit({title:'One',target:'p:'+a.state().projects[0].id,dueDate:'',note:'',notes:''});
+ const once=JSON.stringify(a.serialize());
+ a.setState(JSON.parse(once));
+ assert.equal(JSON.stringify(a.serialize()),once);
+});
+test('deleting a project lands its tasks at the end of the client list, not on top of it',()=>{
+ const {a,ctx}=app();a.capture();
+ a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Build'}],tasks:[
+  {id:'loose',clientId:'c1',title:'Already here',status:'To Do',order:1000},
+  {id:'a',projectId:'p1',clientId:'c1',title:'A',status:'To Do',order:1000},
+  {id:'b',projectId:'p1',clientId:'c1',title:'B',status:'To Do',order:2000}]});
+ a.deleteItem('project','p1');
+ ctx.confirm.onConfirm();
+ const order=id=>a.state().tasks.find(t=>t.id===id).order;
+ assert.equal(a.state().tasks.filter(t=>t.projectId).length,0);
+ assert(order('loose')<order('a'),'a landed on or above the task already there');
+ assert(order('a')<order('b'),'the pair lost its own sequence');
+ const orders=a.state().tasks.map(t=>t.order);
+ assert.equal(new Set(orders).size,orders.length,'two tasks share an order');
+});
+test('a backup carrying one id twice keeps both records and makes both editable',()=>{
+ const {a}=app();
+ // Every lookup is byId, which returns the first match, so a second record on
+ // the same id would render but resist every edit and delete.
+ const merged={clients:[{id:'c1',name:'Alpha'},{id:'c1',name:'Beta'}],
+  projects:[{id:'p1',clientId:'c1',name:'Build'},{id:'p1',clientId:'c1',name:'Ship'}],
+  tasks:[{id:'t1',projectId:'p1',clientId:'c1',title:'First'},
+         {id:'t1',projectId:'p1',clientId:'c1',title:'Second'}]};
+ const out=a.normalize(merged);
+ for (const [label,list] of [['client',out.clients],['project',out.projects],['task',out.tasks]]) {
+  assert.equal(list.length,2,label+' was dropped rather than re-identified');
+  assert.notEqual(list[0].id,list[1].id,'two '+label+'s still share one id');
+ }
+ assert.equal(out.clients[0].id,'c1');                       // the first keeps its id
+ assert.equal(out.clients[1].name,'Beta');                   // and nothing is lost
+ a.setState(out);
+ a.setStatus('task',a.state().tasks[1].id,'Done');
+ assert.equal(a.state().tasks[1].status,'Done');
+ assert.equal(a.state().tasks[0].status,'To Do');            // the edit hit the right one
 });
 test('import refuses bad input atomically and names the drafts-file mistake',()=>{
  const {a}=app();a.setState(backup());

@@ -7,7 +7,8 @@ const html=fs.readFileSync('project-planner-1.html','utf8');
 function runtime(source=html){
   let code=source.match(/<script>([\s\S]*)<\/script>/)[1];
   code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
-    globalThis.api={exportHTML,initDownloads,setHost:x=>{standalone=false;downloadsNs=x;},
+    globalThis.api={exportHTML,initDownloads,exportBackup,setHost:x=>{standalone=false;downloadsNs=x;},
+      seed:doc=>{state=normalize(doc);},
       addPrivateRecords:()=>{state.tasks=[{title:'PRIVATE_TASK_642'}];state.focusSessions=[{note:'PRIVATE_NOTE_642'}];},
       capture:()=>{blobDownload=(name,text,mime)=>globalThis.download={name,text,mime};toast=()=>{};}};
   })();`;
@@ -25,6 +26,22 @@ test('HTML export contains pristine code and excludes loaded records and edited 
   assert(!/PRIVATE_(TASK|NOTE|DOM)_642/.test(ctx.download.text));assert(ctx.download.text.includes('id="focusPage"'));
   new vm.Script(ctx.download.text.match(/<script>([\s\S]*)<\/script>/)[1]);
   const exported=runtime(ctx.download.text);await exported.api.exportHTML();assert.equal(exported.download.text,ctx.download.text);
+});
+test('a backup export writes carried fields under their own names, not as a carrier',async()=>{
+ const ctx=runtime();
+ // A field a later build added: this build does not know it, so normalize
+ // parks it in the record's carrier. The export has to put it back.
+ ctx.api.seed({version:4,clients:[{id:'c1',name:'Alpha',archivedAt:'2026-01-01'}],projects:[],
+  tasks:[{id:'t1',clientId:'c1',title:'One',assignee:'someone'}],workspaces:[{id:'w1'}]});
+ await ctx.api.exportBackup();
+ const out=JSON.parse(ctx.download.text);
+ assert.equal(out.tasks[0].assignee,'someone');
+ assert.equal(out.clients[0].archivedAt,'2026-01-01');
+ assert.equal(JSON.stringify(out.workspaces),JSON.stringify([{id:'w1'}]));
+ // and the carrier itself never reaches the file, on any record
+ [].concat(out.clients,out.projects,out.tasks).forEach(r=>assert.equal('x' in r,false,JSON.stringify(r)));
+ assert.equal(out.version,4);
+ assert(out.exportedAt);
 });
 test('portable source embeds app logic, style and context without local companion assets',()=>{
   assert(!/<script[^>]+src=/i.test(html));assert(!/<(?:link|img)[^>]+(?:href|src)=["'](?!https:|data:|#)/i.test(html));
