@@ -659,6 +659,10 @@
   .focus-buttons { display: flex; gap: 8px; width: 100%; max-width: 320px; }
   .focus-buttons button { flex: 1; min-height: 43px; border-radius: 12px; font-size: 13px; padding: 10px; }
   .focus-end { background: transparent; color: var(--ink-2); }
+  /* Reset is the least frequent of the timer actions, so it sits with Floating
+     clock as a quiet control rather than squeezing a third button into a row
+     already carrying "Start next focus". */
+  .focus-aux { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
   .focus-progress-meta { display: flex; justify-content: space-between; gap: 8px; width: 100%; margin: 18px 0 8px; color: var(--ink-3); font-size: 10px; }
   .focus-progress-meta > :first-child { color: var(--ink-2); }
   #focusProgress { width: 100%; height: 4px; border: none; border-radius: 10px; overflow: hidden; appearance: none; background: var(--line); }
@@ -922,7 +926,7 @@
         <div class="focus-dial-column">
           <div class="focus-ring" id="focusRing"><div class="focus-ring-inner"><span id="focusPhase">READY TO FOCUS</span><span id="focusClock" role="timer" aria-label="Time remaining">25:00</span><span class="focus-clock-caption">one thing at a time</span></div></div>
           <div class="focus-buttons"><button class="primary" id="focusStart" data-act="focus-start">Start focus</button><button class="focus-end" id="focusFinish" data-act="focus-finish" disabled>End session</button></div>
-          <button class="ghost" id="focusPopout" data-act="focus-popout" aria-label="Open floating focus clock">↗ Floating clock</button>
+          <div class="focus-aux"><button class="ghost" id="focusPopout" data-act="focus-popout" aria-label="Open floating focus clock">↗ Floating clock</button><button class="ghost" id="focusReset" data-act="focus-reset" disabled title="Start this session again from the top, with the same settings">↺ Reset</button></div>
           <div id="focusPopoutHelp" class="help" role="status"></div><button class="ghost hidden" id="focusWindowFallback" data-act="focus-window">Open mini window</button>
           <div class="focus-progress-meta"><span id="focusProgressText">Session · 60 min</span><span id="focusBudgetHint">Includes breaks</span></div>
           <progress id="focusProgress" max="100" value="0" aria-label="Session progress"></progress>
@@ -4022,6 +4026,7 @@
     if (act === "focus-start") { ev.preventDefault(); focusStart(); return; }
     if (act === "focus-finish") { focusFinish(); return; }
     if (act === "focus-skip-break") { focusSkipBreak(); return; }
+    if (act === "focus-reset") { focusReset(); return; }
     if (act === "focus-popout") { openFocusPopout(false); return; }
     if (act === "focus-window") { openFocusPopout(true); return; }
     if (act === "focus-export") { exportFocusWeek(el.getAttribute("data-format")); return; }
@@ -4690,6 +4695,31 @@
     run.status="completed"; $("focusMessage").textContent="Session ended. Any focused time is saved; breaks are excluded.";
     persistFocus();
   }
+  /* Puts the clock back to the start of a fresh session with exactly the same
+     settings, assignment and note. Focus already worked in the current run is
+     recorded first, exactly as End session would record it: a reset starts the
+     clock again, it never throws away measured work. The fresh run stands
+     ready rather than running, so nothing is credited until you press Start.
+     focusReady sizes the first block, so a reset and a first start can never
+     disagree about how long it is. */
+  function focusReset(now) {
+    var run=state.focusRun;
+    if (!run || pendingRemote) return;
+    now=now == null ? Date.now() : now;
+    if (run.status !== "completed") {
+      focusSettle(run,now);
+      focusRecord(run,run.remainingMs === 0 ? "completed" : "ended-early");
+    }
+    var fresh={id:newId(), settings:Object.assign({},run.settings), status:"ready", phase:"focus",
+      segmentMs:0, remainingMs:0, anchorAt:0, completedMs:0, elapsedMs:0, block:1, intervals:[],
+      assignment:run.assignment, note:run.note};
+    focusReady(fresh,"focus");
+    state.focusRun=fresh;
+    state.focusSettings=Object.assign({},fresh.settings);
+    $("focusMessage").textContent="Reset. Same settings, ready when you are.";
+    persistFocus();
+  }
+
   /* Ends a break early and stands the next focus block ready. Whatever break
      was actually taken still settles into the run, because a session budget
      counts breaks; skipping shortens the break, it does not pretend it never
@@ -4865,10 +4895,13 @@
     });
     $("focusTotalLabel").textContent=busy && settings.budgetMode !== "session" ? "Total focus" : "Session length";
     var main=$("focusStart");
-    main.textContent=!run || run.status === "completed" ? "Start focus" : run.status === "running" ? "Pause" : run.status === "paused" ? "Resume" : run.phase === "break" ? "Start break" : "Start next focus";
+    // A ready run with nothing spent yet is a fresh session (a reset makes one),
+    // so "next" would imply a block that never happened.
+    main.textContent=!run || run.status === "completed" ? "Start focus" : run.status === "running" ? "Pause" : run.status === "paused" ? "Resume" : run.phase === "break" ? "Start break" : run.elapsedMs === 0 ? "Start focus" : "Start next focus";
     main.disabled=mode === "loading";
     $("focusMiniButton").textContent=main.textContent; $("focusMiniButton").disabled=main.disabled;
     $("focusFinish").disabled=!busy;
+    var reset=$("focusReset"); if (reset) reset.disabled=!run || mode === "loading";
     /* During a break the useful action is to get back to work, not to end the
        whole session. End session returns as soon as the break is over. */
     var onBreak=!!(run && run.phase === "break" && run.status !== "completed");

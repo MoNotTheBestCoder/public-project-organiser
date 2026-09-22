@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusReset,focusTick,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -117,6 +117,72 @@ test('a boundary noticed long after it happened does not start a break',()=>{
  assert.equal(a.state().focusRun.phase,'break');
  assert.equal(a.state().focusRun.status,'ready','a break four hours late started itself');
  assert.equal(a.state().focusSessions[0].durationMs,25*minute);   // only the work that happened
+});
+test('reset mid-block keeps the work already done and starts again with the same settings',()=>{
+ const {a,element}=timer(60,25,5);
+ element('focusTask').value='c:c1';
+ a.focusStart(epoch);
+ const before=a.state().focusRun;
+ const settings=JSON.stringify(before.settings), assignment=JSON.stringify(before.assignment), note=before.note;
+ a.focusReset(epoch+10*minute);                      // ten minutes in
+ // the ten minutes are not thrown away
+ assert.equal(a.state().focusSessions.length,1);
+ assert.equal(a.state().focusSessions[0].durationMs,10*minute);
+ assert.equal(a.state().focusSessions[0].outcome,'ended-early');
+ // and the clock is back at the top of an identical session
+ const run=a.state().focusRun;
+ assert.notEqual(run.id,before.id,'a reset must be a new run, or its blocks would collide');
+ assert.equal(run.status,'ready','a reset must not start crediting time on its own');
+ assert.equal(run.phase,'focus');
+ assert.equal(run.segmentMs,25*minute);
+ assert.equal(run.remainingMs,25*minute);
+ assert.equal(run.elapsedMs,0);
+ assert.equal(run.completedMs,0);
+ assert.equal(run.block,1);
+ assert.equal(JSON.stringify(run.settings),settings);
+ assert.equal(JSON.stringify(run.assignment),assignment);
+ assert.equal(run.note,note);
+ // it survives a reload, which is where a malformed run would be dropped
+ a.setState(a.serialize());
+ assert.equal(a.state().focusRun.status,'ready');
+ assert.equal(a.state().focusRun.segmentMs,25*minute);
+});
+test('reset works after a session ends, during a break, and before any work, logging only real focus',()=>{
+ // after the session is over: nothing new to log, just a fresh start
+ let {a}=timer(60,25,5);
+ a.focusStart(epoch);a.focusFinish(epoch+5*minute);
+ assert.equal(a.state().focusSessions.length,1);
+ a.focusReset(epoch+6*minute);
+ assert.equal(a.state().focusSessions.length,1,'a finished session was logged twice');
+ assert.equal(a.state().focusRun.status,'ready');
+ // during a break: break time is never logged as work
+ ({a}=timer(60,25,5));
+ a.focusStart(epoch);a.focusTick(epoch+25*minute);  // block ends, break starts itself
+ assert.equal(a.state().focusRun.phase,'break');
+ a.focusReset(epoch+27*minute);
+ assert.equal(a.state().focusSessions.length,1);    // just the one finished block
+ assert.equal(a.state().focusSessions[0].durationMs,25*minute);
+ assert.equal(a.state().focusRun.phase,'focus');
+ assert.equal(a.state().focusRun.status,'ready');
+ // before any work at all: a zero-length block is not a block
+ ({a}=timer(60,25,5));
+ a.focusStart(epoch);a.focusReset(epoch);
+ assert.equal(a.state().focusSessions.length,0);
+ // and with nothing to reset, it does nothing
+ ({a}=timer(60,25,5));
+ a.focusReset(epoch);
+ assert.equal(a.state().focusRun,null);
+});
+test('a short session resets to a first block cut to the session, as a first start would',()=>{
+ const {a}=timer(15,25,5);                          // shorter than one block
+ a.focusStart(epoch);
+ const first=a.state().focusRun;
+ a.focusReset(epoch+minute);
+ // a do-nothing reset would leave the length alone too, so prove it ran
+ assert.notEqual(a.state().focusRun.id,first.id);
+ assert.equal(a.state().focusRun.status,'ready');
+ assert.equal(a.state().focusRun.segmentMs,first.segmentMs);
+ assert.equal(a.state().focusRun.segmentMs,15*minute);
 });
 test('background tab completes one block without inventing subsequent work',()=>{const {a}=timer();a.focusStart(epoch);a.focusTick(epoch+4*60*minute);assert.equal(a.state().focusSessions[0].durationMs,25*minute);assert.equal(a.state().focusRun.status,'ready');a.focusTick(epoch+5*60*minute);assert.equal(a.state().focusSessions.length,1);});
 test('reload resumes timestamp and completion remains idempotent after normalization',()=>{const {a,data}=timer(1,1,0);a.focusStart(epoch);const snapshot=JSON.parse(data.get('project-planner-v1'));a.setState(snapshot);a.focusTick(epoch+2*minute);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,minute);a.setState(JSON.parse(data.get('project-planner-v1')));a.focusTick(epoch+3*minute);assert.equal(a.state().focusSessions.length,1);});
