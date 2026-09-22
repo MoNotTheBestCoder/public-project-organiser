@@ -708,6 +708,14 @@
   .focus-entry-side b { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
   .focus-entry-side button { font-size: 11px; padding: 4px; }
   .focus-empty { font-size: 13px; color: var(--ink-3); padding: 18px 0 25px; line-height: 1.8; }
+  /* Touch sizing keys off the pointer, not the width. A tablet, or a phone held
+     sideways, is wider than the phone breakpoint and is still used with a
+     finger, and the width rules below never reach it. */
+  @media (pointer: coarse) {
+    .focus-buttons button { min-height: 44px; }
+    .focus-aux button, .focus-week-nav button, .focus-log-exports button,
+    .focus-entry-side button { min-height: 44px; min-width: 44px; }
+  }
   @media (max-width: 700px) {
     .focus-heading { padding: 22px 18px 0; }
     .focus-local-badge { display: none; }
@@ -956,7 +964,7 @@
       <details class="focus-log"><summary><span>Your time log</span><span class="focus-log-summary"><b id="focusWeekTotal">0m</b><span id="focusLogCount">0 focus blocks</span></span></summary>
         <div class="focus-week-nav"><button data-act="focus-prev" aria-label="Previous day"><svg class="ui-chevron arrow-left" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="focusWeekLabel"></span><button data-act="focus-next" aria-label="Next day"><svg class="ui-chevron arrow-right" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><button class="ghost" data-act="focus-today">Today</button><button class="ghost focus-copy" data-act="focus-copy">Copy week</button><button data-act="focus-add">+ Add session</button></div>
         <div class="focus-log-exports" role="group" aria-label="Download the week's log"><span id="focusExportLabel">Export this week</span><button data-act="focus-export" data-format="csv">CSV</button><button data-act="focus-export" data-format="md">Markdown</button></div>
-        <p class="focus-log-help">Monday–Sunday, in your local timezone. Completed focus time only; pauses and breaks are excluded. Export backup includes this log.</p>
+        <p class="focus-log-help">One day at a time, in your local timezone. Exports and Copy week cover the whole Monday to Sunday week. Completed focus time only; pauses and breaks are excluded. Export backup includes this log.</p>
         <div id="focusLogEntries"></div>
         <details id="focusCopyPanel" class="hidden"><summary>Weekly summary</summary><textarea id="focusWeekText" readonly rows="6" aria-label="Weekly focus summary"></textarea></details>
       </details>

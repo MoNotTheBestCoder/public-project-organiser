@@ -87,6 +87,11 @@ They are not general design theory; they are the specific mistakes this file has
   two-column board is far narrower than the viewport. Rules about how a row inside a card
   wraps key off `@container`; rules about the device — page padding, touch target size, the
   16px font that stops iOS zooming — stay in `@media`.
+- **Touch targets key off the pointer, not the width.** The 44px minimums used to live inside
+  `max-width` breakpoints, so a tablet, or a phone held sideways at 844px, was wider than the
+  breakpoint and got desktop-sized buttons under a finger: *Edit details* measured 64×27 on a
+  768px touch screen. Size for a finger under `@media (pointer: coarse)`; keep width breakpoints
+  for layout.
 
 ## Before adding a graphic
 
