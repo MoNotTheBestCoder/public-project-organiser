@@ -693,7 +693,7 @@
   #focusWeekLabel { font-size: 12px; font-weight: 500; min-width: 11ch; text-align: center; }
   /* Week navigation on the left, the actions that act on that week on the
      right, with the gap between them doing the separating. */
-  .focus-week-nav [data-act="focus-this-week"] { margin-right: auto; }
+  .focus-week-nav [data-act="focus-today"] { margin-right: auto; }
   .focus-log-help { font-size: 11px; color: var(--ink-3); }
   .focus-entry { display: flex; gap: 18px; justify-content: space-between; padding: 16px 0; border-top: 1px solid var(--line-soft); }
   .focus-entry > :first-child { min-width: 0; }
@@ -950,8 +950,8 @@
         </div>
       </div>
       <details class="focus-log"><summary><span>Your time log</span><span class="focus-log-summary"><b id="focusWeekTotal">0m</b><span id="focusLogCount">0 focus blocks</span></span></summary>
-        <div class="focus-week-nav"><button data-act="focus-prev" aria-label="Previous week"><svg class="ui-chevron arrow-left" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="focusWeekLabel"></span><button data-act="focus-next" aria-label="Next week"><svg class="ui-chevron arrow-right" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><button class="ghost" data-act="focus-this-week">This week</button><button class="ghost focus-copy" data-act="focus-copy">Copy week</button><button data-act="focus-add">+ Add session</button></div>
-        <div class="focus-log-exports" role="group" aria-label="Download selected week's log"><span>Export this week</span><button data-act="focus-export" data-format="csv">CSV</button><button data-act="focus-export" data-format="md">Markdown</button></div>
+        <div class="focus-week-nav"><button data-act="focus-prev" aria-label="Previous day"><svg class="ui-chevron arrow-left" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="focusWeekLabel"></span><button data-act="focus-next" aria-label="Next day"><svg class="ui-chevron arrow-right" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><button class="ghost" data-act="focus-today">Today</button><button class="ghost focus-copy" data-act="focus-copy">Copy week</button><button data-act="focus-add">+ Add session</button></div>
+        <div class="focus-log-exports" role="group" aria-label="Download the week's log"><span id="focusExportLabel">Export this week</span><button data-act="focus-export" data-format="csv">CSV</button><button data-act="focus-export" data-format="md">Markdown</button></div>
         <p class="focus-log-help">Monday–Sunday, in your local timezone. Completed focus time only; pauses and breaks are excluded. Export backup includes this log.</p>
         <div id="focusLogEntries"></div>
         <details id="focusCopyPanel" class="hidden"><summary>Weekly summary</summary><textarea id="focusWeekText" readonly rows="6" aria-label="Weekly focus summary"></textarea></details>
@@ -4021,12 +4021,13 @@
 
     if (act === "focus-start") { ev.preventDefault(); focusStart(); return; }
     if (act === "focus-finish") { focusFinish(); return; }
+    if (act === "focus-skip-break") { focusSkipBreak(); return; }
     if (act === "focus-popout") { openFocusPopout(false); return; }
     if (act === "focus-window") { openFocusPopout(true); return; }
     if (act === "focus-export") { exportFocusWeek(el.getAttribute("data-format")); return; }
     if (act === "focus-edit") { editFocusSession(el.getAttribute("data-id")); return; }
     if (act === "focus-add") { addFocusSession(); return; }
-    if (act === "focus-prev" || act === "focus-next" || act === "focus-this-week") { focusWeekOffset = act === "focus-this-week" ? 0 : focusWeekOffset + (act === "focus-prev" ? -1 : 1); renderFocusLog(); return; }
+    if (act === "focus-prev" || act === "focus-next" || act === "focus-today") { focusDayOffset = act === "focus-today" ? 0 : focusDayOffset + (act === "focus-prev" ? -1 : 1); renderFocusLog(); return; }
     if (act === "focus-copy") { copyFocusWeek(); return; }
     if (act === "sidebar-toggle") { toggleSidebar(); return; }
     if (act === "sidebar-close") { closeSidebarDrawer(true); return; }
@@ -4309,7 +4310,7 @@
 
   /* Focus timers use wall-clock timestamps, never interval tick counts.
      Only the current block may complete while the page is away. */
-  var focusWeekOffset = 0;
+  var focusDayOffset = 0;      // days from today, for the log view
   var focusTicker = null;
   var focusWindow = null, focusWindowOpening = false;
   /* Sidebar preferences are UI-only; opening a phone drawer never changes the desktop choice. */
@@ -4689,6 +4690,21 @@
     run.status="completed"; $("focusMessage").textContent="Session ended. Any focused time is saved; breaks are excluded.";
     persistFocus();
   }
+  /* Ends a break early and stands the next focus block ready. Whatever break
+     was actually taken still settles into the run, because a session budget
+     counts breaks; skipping shortens the break, it does not pretend it never
+     started. The next block still waits for a press, like every other
+     break-to-focus transition. */
+  function focusSkipBreak(now) {
+    var run=state.focusRun;
+    if (!run || run.phase !== "break" || run.status === "completed" || pendingRemote) return;
+    now=now == null ? Date.now() : now;
+    focusSettle(run,now);
+    focusReady(run,"focus");
+    $("focusMessage").textContent="Break skipped. Ready for the next focus block.";
+    persistFocus();
+  }
+
   function focusClock(ms) {
     var s=Math.max(0,Math.ceil(ms/1000)); return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
   }
@@ -4733,6 +4749,7 @@
     doc.getElementById("floatStart").textContent=$("focusStart").textContent;
     doc.getElementById("floatStart").disabled=$("focusStart").disabled;
     doc.getElementById("floatFinish").disabled=!run || run.status === "completed";
+    doc.getElementById("floatFinish").textContent=$("focusFinish").textContent;
     doc.title=clock.textContent+" · Focus";
   }
   async function openFocusPopout(useWindow) {
@@ -4760,7 +4777,10 @@
       bindFocusPicker(doc,"float");
       doc.getElementById("floatNote").addEventListener("input",function(){updateFocusDetail("note",this.value);});
       doc.getElementById("floatStart").addEventListener("click",function(){focusStart();});
-      doc.getElementById("floatFinish").addEventListener("click",function(){focusFinish();});
+      doc.getElementById("floatFinish").addEventListener("click",function(){
+        var live=state.focusRun;
+        if (live && live.phase === "break" && live.status !== "completed") focusSkipBreak(); else focusFinish();
+      });
       var ticker=opened.setInterval(function(){focusTick();},500);
       opened.addEventListener("pagehide",function(){opened.clearInterval(ticker);if(focusWindow === opened)focusWindow=null;});
       $("focusPopoutHelp").textContent=useWindow ? "Mini window open. Your browser does not provide an always-on-top clock here." : "Floating clock open. Keep this tab open in the background.";
@@ -4773,15 +4793,27 @@
       $("focusWindowFallback").classList.remove("hidden");
     } finally { focusWindowOpening=false; }
   }
+  /* One local day. The log reads a day at a time now: a whole week at once
+     was more than could be taken in at a glance. Exports stay weekly, so both
+     bounds helpers are live and neither is the other's special case. */
+  function dayBounds(offset, now) {
+    var start=new Date(now == null ? Date.now() : now); start.setHours(0,0,0,0);
+    start.setDate(start.getDate()+(offset || 0));
+    var end=new Date(start); end.setDate(end.getDate()+1); return {start:start.getTime(),end:end.getTime()};
+  }
+  // The week the displayed day falls in, which is what an export covers. Noon,
+  // so a day whose midnight is shifted by daylight saving still lands right.
+  function weekOfDay(offset) { return weekBounds(0, dayBounds(offset).start+43200000); }
+
   function weekBounds(offset, now) {
     var start=new Date(now == null ? Date.now() : now); start.setHours(0,0,0,0); start.setDate(start.getDate()-((start.getDay()+6)%7)+(offset || 0)*7);
     var end=new Date(start); end.setDate(end.getDate()+7); return {start:start.getTime(),end:end.getTime()};
   }
-  function focusWeekSessions(range) {
+  function sessionsInRange(range) {
     return (state.focusSessions || []).map(function (s) { return {session:s,ms:s.intervals.reduce(function (sum,x) {return sum+Math.max(0,Math.min(x.end,range.end)-Math.max(x.start,range.start));},0)}; }).filter(function (x) {return x.ms>0;}).sort(function (a,b) {return b.session.startedAt.localeCompare(a.session.startedAt);});
   }
   function focusLogExport(format, range) {
-    var rows=focusWeekSessions(range),week=isoDate(range.start),zone=Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+    var rows=sessionsInRange(range),week=isoDate(range.start),zone=Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
     var entries=rows.map(function(row){var s=row.session,a=s.assignment,spans=s.intervals.filter(function(x){return x.end>range.start && x.start<range.end;});
       return [s.id,a.clientName,a.projectName,a.taskTitle,s.note,new Date(Math.max(spans[0].start,range.start)).toISOString(),new Date(Math.min(spans[spans.length-1].end,range.end)).toISOString(),String(row.ms/1000),(row.ms/60000).toFixed(6),zone];});
     if(format === "csv") {
@@ -4796,16 +4828,20 @@
     return {filename:"focus-log-"+week+".md",mime:"text/markdown;charset=utf-8",text:text+'\n'};
   }
   async function exportFocusWeek(format) {
-    var file=focusLogExport(format === "csv" ? "csv" : "md",weekBounds(focusWeekOffset));
+    var file=focusLogExport(format === "csv" ? "csv" : "md",weekOfDay(focusDayOffset));
     if(standalone) {blobDownload(file.filename,file.text,file.mime);return;}
     if(!downloadsNs) {toast("File downloads are unavailable in this view. Use Copy week.");return;}
     try {await downloadsNs.save({filename:file.filename,data:file.text});toast("Weekly log saved.");}
     catch(e) {if(!e || e.code !== "declined")toast("Couldn't download the weekly log.");}
   }
   function renderFocusLog() {
-    var range=weekBounds(focusWeekOffset), rows=focusWeekSessions(range), total=rows.reduce(function (sum,x) {return sum+x.ms;},0);
-    var fmt=function (ms) {return new Date(ms).toLocaleDateString(undefined,{day:"numeric",month:"short"});};
-    $("focusWeekLabel").textContent=fmt(range.start)+" – "+fmt(range.end-1);
+    var range=dayBounds(focusDayOffset), rows=sessionsInRange(range), total=rows.reduce(function (sum,x) {return sum+x.ms;},0);
+    var fmtDay=function (ms) {return new Date(ms).toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});};
+    var fmtShort=function (ms) {return new Date(ms).toLocaleDateString(undefined,{day:"numeric",month:"short"});};
+    $("focusWeekLabel").textContent=(focusDayOffset === 0 ? "Today · " : "")+fmtDay(range.start);
+    // The view is a day but an export is a week, so the button says which one.
+    var week=weekOfDay(focusDayOffset), exportLabel=$("focusExportLabel");
+    if (exportLabel) exportLabel.textContent="Export week of "+fmtShort(week.start);
     $("focusWeekTotal").textContent=focusDuration(total);
     $("focusLogCount").textContent=rows.length+" focus block"+(rows.length === 1 ? "" : "s");
     var out="";
@@ -4815,10 +4851,10 @@
       // to, so the path beneath it leaves that part out rather than repeating it.
       var title=focusAssignmentTitle(a);
       var path=[a.clientName,a.projectName].filter(Boolean).filter(function (part) { return part !== title; }).join(" / ");
-      var when=new Date(s.startedAt).toLocaleString(undefined,{weekday:"short",hour:"2-digit",minute:"2-digit"});
+      var when=new Date(s.startedAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
       out+='<article class="focus-entry"><div><strong>'+esc(title)+'</strong><span class="focus-entry-meta">'+esc(path ? path+" · "+when : when)+'</span>'+(s.note ? '<p>'+esc(s.note)+'</p>' : '<p class="help">Add a note for your timesheet.</p>')+'</div><div class="focus-entry-side"><b>'+esc(focusDuration(row.ms))+'</b><button class="ghost" data-act="focus-edit" data-id="'+esc(s.id)+'">Edit details</button></div></article>';
     });
-    $("focusLogEntries").innerHTML=out || '<p class="focus-empty">Your focused work will appear here. Run the timer, or add a session manually if you worked without it. Attach a client, project, task or note to make Friday’s timesheet easier.</p>';
+    $("focusLogEntries").innerHTML=out || '<p class="focus-empty">Nothing logged for this day. Your focused work will appear here. Run the timer, or add a session manually if you worked without it. Attach a client, project, task or note to make Friday’s timesheet easier.</p>';
   }
   function renderFocus() {
     if (!$("focusClock")) return;
@@ -4833,6 +4869,12 @@
     main.disabled=mode === "loading";
     $("focusMiniButton").textContent=main.textContent; $("focusMiniButton").disabled=main.disabled;
     $("focusFinish").disabled=!busy;
+    /* During a break the useful action is to get back to work, not to end the
+       whole session. End session returns as soon as the break is over. */
+    var onBreak=!!(run && run.phase === "break" && run.status !== "completed");
+    $("focusFinish").textContent=onBreak ? "Skip break" : "End session";
+    $("focusFinish").setAttribute("data-act",onBreak ? "focus-skip-break" : "focus-finish");
+    $("focusFinish").title=onBreak ? "Start the next focus block now" : "";
     var assignment=run ? run.assignment : focusAssignment(null);
     var picker=$("focusTask"), selection=run ? focusTargetValue(assignment) : picker.value;
     picker.value=selection || "";
@@ -4913,7 +4955,7 @@
       // Show the week it landed in, or a backdated entry would be off-screen.
       // Round, not floor: a week is 7 days give or take an hour across a DST
       // change, and flooring that shortfall showed the week before.
-      focusWeekOffset = Math.round((start - weekBounds(0).start) / 604800000);
+      focusDayOffset = Math.round((dayBounds(0,start).start - dayBounds(0).start) / 86400000);
       persistFocus();
       toast("Session added to your log.");
     }});
@@ -4947,7 +4989,7 @@
       var retimed=setSessionMinutes(current,v.minutes);
       current.note=v.note.slice(0,4000);
       // Follow it, or an entry moved into another week vanishes off-screen.
-      if(moved && current.intervals.length)focusWeekOffset=Math.round((current.intervals[0].start-weekBounds(0).start)/604800000);
+      if(moved && current.intervals.length)focusDayOffset=Math.round((dayBounds(0,current.intervals[0].start).start-dayBounds(0).start)/86400000);
       persistFocus();
       var said=[];
       if(moved)said.push("moved to "+fmtDate(isoDate(current.intervals[0].start)));
@@ -4956,8 +4998,9 @@
     }});
   }
   async function copyFocusWeek() {
-    var range=weekBounds(focusWeekOffset), rows=focusWeekSessions(range);
-    var text="Focus log: "+$("focusWeekLabel").textContent+"\nTotal: "+focusDuration(rows.reduce(function(sum,x){return sum+x.ms;},0))+"\n\n"+rows.map(function(x){var s=x.session;return [new Date(s.startedAt).toLocaleString(),focusDuration(x.ms),s.assignment.clientName,s.assignment.projectName,s.assignment.taskTitle,s.note].filter(Boolean).join(" | ");}).join("\n");
+    var range=weekOfDay(focusDayOffset), rows=sessionsInRange(range);
+    var span=function (ms) {return new Date(ms).toLocaleDateString(undefined,{day:"numeric",month:"short"});};
+    var text="Focus log: "+span(range.start)+" – "+span(range.end-1)+"\nTotal: "+focusDuration(rows.reduce(function(sum,x){return sum+x.ms;},0))+"\n\n"+rows.map(function(x){var s=x.session;return [new Date(s.startedAt).toLocaleString(),focusDuration(x.ms),s.assignment.clientName,s.assignment.projectName,s.assignment.taskTitle,s.note].filter(Boolean).join(" | ");}).join("\n");
     $("focusWeekText").value=text; $("focusCopyPanel").classList.remove("hidden");
     try {await navigator.clipboard.writeText(text);toast("Weekly time log copied.");}
     catch(e) {$("focusCopyPanel").open=true;$("focusWeekText").focus();$("focusWeekText").select();toast("Select and copy your time log below.");}

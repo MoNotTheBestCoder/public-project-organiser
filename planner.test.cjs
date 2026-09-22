@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,focusWeekSessions,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusTick,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -122,7 +122,33 @@ test('background tab completes one block without inventing subsequent work',()=>
 test('reload resumes timestamp and completion remains idempotent after normalization',()=>{const {a,data}=timer(1,1,0);a.focusStart(epoch);const snapshot=JSON.parse(data.get('project-planner-v1'));a.setState(snapshot);a.focusTick(epoch+2*minute);assert.equal(a.state().focusSessions.length,1);assert.equal(a.state().focusSessions[0].durationMs,minute);a.setState(JSON.parse(data.get('project-planner-v1')));a.focusTick(epoch+3*minute);assert.equal(a.state().focusSessions.length,1);});
 test('JSON includes settings, active timer, task snapshots and notes',()=>{const {a,data}=timer(90,30,8);a.focusStart(epoch);assert.equal(a.serialize().version,5);a.focusFinish(epoch+45000);const json=JSON.parse(data.get('project-planner-v1'));assert.equal(json.focusSettings.repeat,false);assert.equal(json.focusSettings.totalMinutes,90);assert.equal(json.focusSettings.focusMinutes,30);assert.equal(json.focusSettings.breakMinutes,8);assert.equal(json.focusSessions[0].assignment.clientName,'Alpha');assert.equal(json.focusSessions[0].note,'Drafted client scope');assert.equal(json.focusRun.status,'completed');});
 test('deleting linked task and undoing planner work preserve focus history',()=>{const {a,ctx}=timer(5,5,0);a.capture();a.focusStart(epoch);a.deleteItem('task','t0');ctx.confirm.onConfirm();a.focusFinish(epoch+minute);assert.equal(a.state().focusSessions[0].assignment.taskTitle,'Task 0');a.recoverChange(false);assert(a.state().tasks.some(t=>t.id==='t0'));assert.equal(a.state().focusSessions[0].durationMs,minute);assert.equal(a.state().focusRun.status,'completed');});
-test('weekly allocation splits active intervals across Monday midnight',()=>{const {a}=timer();const monday=new Date(2026,8,21).getTime();const f=fixture();f.focusSessions=[{id:'cross',intervals:[{start:monday-5*minute,end:monday+5*minute}],assignment:{taskTitle:'Cross-week work'},outcome:'completed'}];a.setState(f);assert.equal(a.focusWeekSessions(a.weekBounds(0,monday))[0].ms,5*minute);assert.equal(a.focusWeekSessions(a.weekBounds(-1,monday))[0].ms,5*minute);});
+test('the log shows one day at a time while an export still covers its week',()=>{
+ const {a,element}=app();
+ const day=(d,h)=>new Date(2026,8,d,h).getTime();
+ a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[],tasks:[],focusSessions:[
+  {id:'mon',assignment:{clientName:'Alpha'},note:'MONDAY_WORK',outcome:'completed',
+   intervals:[{start:day(21,9),end:day(21,10)}]},
+  {id:'tue',assignment:{clientName:'Alpha'},note:'TUESDAY_WORK',outcome:'completed',
+   intervals:[{start:day(22,9),end:day(22,11)}]}]});
+ // a day holds only its own sessions
+ const monday=a.dayBounds(0,day(21,12));
+ assert.equal(a.sessionsInRange(monday).length,1);
+ assert.equal(a.sessionsInRange(monday)[0].ms,60*60000);
+ const tuesday=a.dayBounds(0,day(22,12));
+ assert.equal(a.sessionsInRange(tuesday).length,1);
+ assert.equal(a.sessionsInRange(tuesday)[0].ms,120*60000);
+ // a day boundary is local midnight to local midnight, whatever the month
+ assert.equal(tuesday.start-monday.start,86400000);
+ assert.equal(a.dayBounds(1,day(21,12)).start,tuesday.start);
+ assert.equal(a.dayBounds(-1,day(22,12)).start,monday.start);
+ // the export still covers the whole week, so both days land in one file
+ const week=a.weekBounds(0,day(22,12));
+ assert.equal(a.sessionsInRange(week).length,2);
+ const csv=a.focusLogExport('csv',week).text;
+ assert(csv.includes('MONDAY_WORK')&&csv.includes('TUESDAY_WORK'),'the weekly export lost a day');
+ assert.match(a.focusLogExport('csv',week).filename,/^focus-log-2026-09-21\.csv$/);
+});
+test('weekly allocation splits active intervals across Monday midnight',()=>{const {a}=timer();const monday=new Date(2026,8,21).getTime();const f=fixture();f.focusSessions=[{id:'cross',intervals:[{start:monday-5*minute,end:monday+5*minute}],assignment:{taskTitle:'Cross-week work'},outcome:'completed'}];a.setState(f);assert.equal(a.sessionsInRange(a.weekBounds(0,monday))[0].ms,5*minute);assert.equal(a.sessionsInRange(a.weekBounds(-1,monday))[0].ms,5*minute);});
 test('old backups migrate with defaults; malformed timer and intervals are rejected',()=>{const {a}=app();const old=a.normalize(fixture());assert.equal(old.focusSessions.length,0);assert.equal(old.focusSettings.focusMinutes,25);assert.equal(old.focusRun,null);const bad=a.normalize({focusRun:{id:'x',status:'running',phase:'focus'},focusSessions:[{id:'bad',intervals:[{start:1,end:Infinity},{start:1,end:1e100}]}]});assert.equal(bad.focusRun,null);assert.equal(bad.focusSessions.length,0);});
 test('invalid settings do not start a timer; zero-break plans go directly to ready focus',()=>{const {a,element}=timer(0,0,5);a.focusStart(epoch);assert.equal(a.state().focusRun,null);element('focusTotal').value='2';element('focusPeriod').value='1';element('focusBreak').value='0';a.focusStart(epoch);a.focusTick(epoch+minute);assert.equal(a.state().focusRun.phase,'focus');assert.equal(a.state().focusRun.status,'ready');});
 test('editing logged notes preserves measured duration',()=>{const {a,ctx}=timer();a.focusStart(epoch);a.focusFinish(epoch+minute);const id=a.state().focusSessions[0].id;a.capture();a.editFocusSession(id);ctx.form.onSubmit({taskId:'t1',note:'Updated timesheet detail'});assert.equal(a.state().focusSessions[0].durationMs,minute);assert.equal(a.state().focusSessions[0].assignment.taskId,'t1');assert.equal(a.state().focusSessions[0].note,'Updated timesheet detail');});
@@ -742,7 +768,7 @@ test('editing a session rewrites its recorded time and what it contributes to th
  assert.equal(s().note,'Corrected');
  // the week total follows the correction
  const week=a.weekBounds(0,Date.parse('2026-09-22T12:00:00'));
- assert.equal(a.focusWeekSessions(week)[0].ms,95*60000);
+ assert.equal(a.sessionsInRange(week)[0].ms,95*60000);
 });
 test('a retimed session keeps its start, so it stays in the same week',()=>{
  const {a}=app();

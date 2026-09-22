@@ -12,6 +12,7 @@ function surface() {
       elements.set(id, { value:'', textContent:'', innerHTML:'', disabled:false, open:true,
         selectedOptions:[{textContent:'No task'}], style:{values:{},setProperty(k,v){this.values[k]=v;}},
         classList:{add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x),toggle(){}},
+        attrs:{}, setAttribute(name,value){this.attrs[name]=String(value);}, getAttribute(name){return name in this.attrs ? this.attrs[name] : null;},
         listeners:{}, addEventListener(name, callback){this.listeners[name]=callback;},
         checkValidity:()=>true, focus(){}, select(){} });
     }
@@ -28,7 +29,7 @@ function app() {
   let code=fs.readFileSync('project-planner-1.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1];
   code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
     render=()=>{};toast=()=>{};
-    globalThis.api={openFocusPopout,focusStart,focusPause,focusFinish,focusTick,renderFocus,initFocus,serialize,focusPickerResults,updateFocusDetail,focusTargetAssignment,focusTargetValue,focusTaskOptions,focusLogExport,editFocusSession,
+    globalThis.api={openFocusPopout,focusStart,focusPause,focusFinish,focusSkipBreak,focusTick,renderFocus,initFocus,serialize,focusPickerResults,updateFocusDetail,focusTargetAssignment,focusTargetValue,focusTaskOptions,focusLogExport,editFocusSession,
       captureForm:()=>{openForm=x=>globalThis.form=x;},pending:x=>pendingRemote=x,
       state:()=>state,restore:x=>state=normalize(x),window:()=>focusWindow};
     mode='local';})();`;
@@ -234,6 +235,31 @@ test('the setup fields accept any whole number of minutes, not only multiples of
  block.value='25'; rest.value='0';
  rest.listeners.change.call(rest);
  assert.equal(x.a.state().focusSettings.breakMinutes,0);
+});
+test('during a break the end button becomes skip break, and skipping starts the next block ready',()=>{
+ const x=app();x.a.restore(workFixture());
+ x.element('focusTotal').value='30';x.element('focusPeriod').value='1';x.element('focusBreak').value='10';
+ x.a.focusStart();x.advance(60000);x.a.focusTick();
+ assert.equal(x.a.state().focusRun.phase,'break');
+ assert.equal(x.a.state().focusRun.status,'running');          // the break started itself
+ assert.equal(x.element('focusFinish').textContent,'Skip break');
+ assert.equal(x.element('focusFinish').getAttribute('data-act'),'focus-skip-break');
+ // skip after two of the ten minutes
+ x.advance(120000);
+ x.a.focusSkipBreak();
+ assert.equal(x.a.state().focusRun.phase,'focus');
+ assert.equal(x.a.state().focusRun.status,'ready','the next block must still wait for a press');
+ // the break actually taken is kept: a session budget counts breaks, and
+ // skipping shortens one rather than pretending it never ran
+ assert.equal(x.a.state().focusRun.elapsedMs,3*60000);
+ assert.equal(x.a.state().focusSessions.length,1,'a break must never be logged as work');
+ // and the button goes back to ending the session
+ assert.equal(x.element('focusFinish').textContent,'End session');
+ assert.equal(x.element('focusFinish').getAttribute('data-act'),'focus-finish');
+ // skipping is meaningless outside a break, and must not touch a focus block
+ const before=JSON.stringify(x.a.state().focusRun);
+ x.a.focusSkipBreak();
+ assert.equal(JSON.stringify(x.a.state().focusRun),before);
 });
 test('changing level during a break prepares the next block without rewriting previous work',()=>{
  const x=app();x.a.restore(workFixture());x.a.updateFocusDetail('target','c:same');
