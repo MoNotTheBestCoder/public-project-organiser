@@ -473,6 +473,11 @@
   }
   .field .ferr { font-size: 13.5px; color: var(--danger); margin-top: 6px; }
   .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .modal .actions .form-extra { margin-right: auto; }
+  /* In a dialog the picker's list opens in the flow, not over the fields
+     below it, so the dialog's own scroll reaches all of it. */
+  .modal .task-picker { margin: 0; }
+  .modal .picker-panel { position: static; }
 
   .modal.sheet .action-list { display: flex; flex-direction: column; gap: 5px; margin: 10px 0 2px; }
   .action-row { width: 100%; text-align: left; padding: 12px 14px; font-size: 15px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
@@ -499,6 +504,10 @@
     padding: 11px 18px; border-radius: 999px; box-shadow: 0 8px 28px rgba(29,28,26,.3);
     z-index: 60; max-width: calc(100vw - 32px); text-align: center;
   }
+  .toast.has-action { display: flex; align-items: center; gap: 14px; padding: 6px 6px 6px 18px; }
+  .toast-action { flex: none; font: inherit; font-weight: 600; color: inherit; background: transparent;
+    border: 1px solid color-mix(in srgb, var(--rail-ink) 35%, transparent); border-radius: 999px; padding: 6px 14px; min-height: 0; }
+  .toast-action:hover { background: color-mix(in srgb, var(--rail-ink) 12%, transparent); }
 
   /* ================= narrow screens ================= */
   @media (max-width: 920px) {
@@ -625,6 +634,10 @@
     .modal h3, .modal .mbody { overflow-wrap: anywhere; }
     .modal .actions { position: sticky; bottom: -16px; background: var(--panel); padding: 12px 0; }
     .modal .actions button { flex: 1; }
+    /* Three buttons do not fit a phone's width without wrapping their labels,
+       so the extra action (Delete) takes its own row under Cancel and Save. */
+    .modal .actions.has-extra { flex-wrap: wrap; }
+    .modal .actions.has-extra .form-extra { flex-basis: 100%; order: 1; margin-right: 0; }
     .toast { bottom: calc(12px + env(safe-area-inset-bottom)); width: max-content; border-radius: 12px; }
     .touch-notes { display: inline-flex; align-items: center; }
     .notes-hint { display: none; }
@@ -895,13 +908,13 @@
      glass is the same on all of them. The tint and border carry the meaning
      on their own, so a browser without backdrop-filter loses nothing. */
   [data-act="add-task"], [data-act="add-project"], [data-act="add-client"], [data-act="focus-add"],
-  button.primary, button[data-act="delete"], button[data-act="bulk-delete"] {
+  button.primary, button[data-act="delete"], button[data-act="bulk-delete"], button.form-extra.danger {
     background-image: linear-gradient(135deg, rgba(255,255,255,var(--glass-sheen)), rgba(255,255,255,0) 62%);
     box-shadow: inset 0 1px 0 rgba(255,255,255,var(--glass-edge)), 0 2px 8px rgba(0,0,0,var(--glass-drop));
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   }
   [data-act="add-task"]:hover:not(:disabled), [data-act="add-project"]:hover:not(:disabled), [data-act="add-client"]:hover:not(:disabled), [data-act="focus-add"]:hover:not(:disabled),
-  button.primary:hover:not(:disabled), button[data-act="delete"]:hover:not(:disabled), button[data-act="bulk-delete"]:hover:not(:disabled) {
+  button.primary:hover:not(:disabled), button[data-act="delete"]:hover:not(:disabled), button[data-act="bulk-delete"]:hover:not(:disabled), button.form-extra.danger:hover:not(:disabled) {
     box-shadow: inset 0 1px 0 rgba(255,255,255,var(--glass-edge)), 0 3px 12px rgba(0,0,0,calc(var(--glass-drop) * 1.6));
   }
 
@@ -910,8 +923,8 @@
   [data-act="add-task"]:hover:not(:disabled), [data-act="add-project"]:hover:not(:disabled), [data-act="add-client"]:hover:not(:disabled), [data-act="focus-add"]:hover:not(:disabled) { background-color:var(--brand-soft); border-color:var(--brand); }
   .rail .cta { color:var(--ink); }
   /* Delete keeps the palette's red; the glass on top is the shared one. */
-  button[data-act="delete"],button[data-act="bulk-delete"] { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger-line); }
-  button[data-act="delete"]:hover:not(:disabled),button[data-act="bulk-delete"]:hover:not(:disabled) { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger); }
+  button[data-act="delete"],button[data-act="bulk-delete"],button.form-extra.danger { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger-line); }
+  button[data-act="delete"]:hover:not(:disabled),button[data-act="bulk-delete"]:hover:not(:disabled),button.form-extra.danger:hover:not(:disabled) { color:var(--danger); background-color:var(--danger-bg); border-color:var(--danger); }
   .focus-log-exports { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:4px 0 10px; }
   .focus-log-exports>span { font-size:11px; color:var(--ink-3); margin-right:auto; }
   .focus-log-exports>button { font-size:12px; border-radius:9px; padding:7px 12px; }
@@ -1179,12 +1192,21 @@
     return "s-active";
   }
 
-  function toast(msg) {
+  /* action: optional {label, run}, a single button in the toast, used where
+     the planner's Undo cannot reach (focus records). It stays up longer so
+     there is time to press it. */
+  var toastTimer = 0;
+  function toast(msg, action) {
     var host = $("toastHost");
-    host.innerHTML = '<div class="toast">' + esc(msg) + "</div>";
-    window.setTimeout(function () {
+    host.innerHTML = '<div class="toast' + (action ? " has-action" : "") + '">' + esc(msg) +
+      (action ? '<button type="button" class="toast-action">' + esc(action.label) + "</button>" : "") + "</div>";
+    if (action) {
+      host.querySelector(".toast-action").addEventListener("click", function () { host.innerHTML = ""; action.run(); });
+    }
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
       if (host.firstChild) host.innerHTML = "";
-    }, 2600);
+    }, action ? 8000 : 2600);
   }
 
   /* ==================================================================== *
@@ -2842,6 +2864,12 @@
         (f.required ? "" : " (optional)") + "</label>";
       if (f.type === "select") {
         body += '<select id="f_' + esc(f.key) + '">' + f.options + "</select>";
+      } else if (f.type === "target") {
+        /* The Focus page's own client, project or task picker, over a hidden
+           input holding the "c:", "p:" or "t:" value. A native select here
+           looked like nothing else in the planner and offered no search. */
+        body += '<input type="hidden" id="f_' + esc(f.key) + '" value="' + esc(f.value || "") + '">' +
+          focusPickerMarkup("f_" + f.key, f.labelFor(f.value || ""), "lbl_f_" + esc(f.key));
       } else if (f.type === "date") {
         body += '<input type="date" id="f_' + esc(f.key) + '" value="' + esc(f.value || "") + '">';
       } else if (f.type === "number") {
@@ -2875,11 +2903,28 @@
          submit a value the field is meant to accept. The step still drives the
          spinner; it no longer decides what is allowed. */
       '<form id="modalForm" novalidate>' + body +
-      '<div class="actions"><button type="button" data-act="cancel">Cancel</button>' +
+      '<div class="actions' + (opts.extra ? " has-extra" : "") + '">' +
+      (opts.extra ? '<button type="button" class="form-extra danger" id="modalExtra">' + esc(opts.extra.label) + "</button>" : "") +
+      '<button type="button" data-act="cancel">Cancel</button>' +
       '<button type="submit" class="primary">' + esc(opts.submitLabel || "Save") + "</button></div></form></div></div>";
 
     var form = $("modalForm");
     if (form.querySelectorAll) form.querySelectorAll("[data-stepper]").forEach(mountDurationStepper);
+    opts.fields.forEach(function (f) {
+      if (f.type !== "target") return;
+      var input = $("f_" + f.key);
+      bindFocusPicker(document, "f_" + f.key, { all: !!f.showDone,
+        current: function () { return input.value; },
+        label: function () { return f.labelFor(input.value); },
+        pick: function (value) {
+          if (value && !focusTargetAssignment(value)) { toast("That client, project or task is no longer available. Choose another."); return false; }
+          input.value = value; return true;
+        },
+        // The list opens in the dialog's flow; bring it into view on a short screen.
+        onOpen: function (picker) { var panel = picker.querySelector(".picker-panel"); if (panel && panel.scrollIntoView) panel.scrollIntoView({ block: "nearest" }); }
+      });
+    });
+    if (opts.extra) $("modalExtra").addEventListener("click", function () { closeModal(); opts.extra.run(); });
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
       if (form.dataset.submitted) return;
@@ -2910,7 +2955,7 @@
       opts.onSubmit(values);
     });
 
-    var first = form.querySelector("input, select, textarea");
+    var first = form.querySelector("input:not([type=hidden]), select, textarea");
     if (first) first.focus();
   }
 
@@ -4743,20 +4788,33 @@
   }
   function focusAssignmentPath(a) {return [a.clientName,a.projectName,a.taskTitle].filter(Boolean).join(" / ");}
   function focusAssignmentTitle(a) {return a.taskTitle || a.projectName || a.clientName || "Unassigned focus";}
-  function focusTaskOptions(assignment) {
-    var selected=focusTargetValue(assignment),out='<option value=""'+(!selected?' selected':'')+'>No assignment — notes only</option>';
-    if(selected && !focusTargetAssignment(selected))out+='<option selected value="'+esc(selected)+'">'+esc(focusAssignmentPath(assignment))+' (removed)</option>';
-    [["Clients",state.clients,"c:"],["Projects",state.projects,"p:"],["Tasks",state.tasks,"t:"]].forEach(function(group){
-      out+='<optgroup label="'+group[0]+'">';group[1].forEach(function(item){var value=group[2]+item.id,a=focusTargetAssignment(value);
-        out+='<option value="'+esc(value)+'"'+(value===selected?' selected':'')+'>'+esc(focusAssignmentPath(a))+'</option>';});out+='</optgroup>';
-    });return out;
+  /* The picker's shell, for pickers built at run time (the session dialogs).
+     The Focus page and the mini window carry the same markup inline. */
+  function focusPickerMarkup(prefix,label,labelledBy) {
+    var chevron=function(d){return '<svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+d+'"/></svg>';};
+    return '<details class="task-picker" id="'+prefix+'Picker"><summary'+(labelledBy ? ' aria-labelledby="'+labelledBy+' '+prefix+'PickerLabel"' : '')+'><span id="'+prefix+'PickerLabel" title="'+esc(label)+'">'+esc(label)+'</span>'+chevron("m4 6 4 4 4-4")+'</summary>'+
+      '<div class="picker-panel"><div class="picker-searchbar"><input type="search" id="'+prefix+'PickerSearch" aria-label="Find client, project or task" placeholder="Search tasks, projects or clients…" autocomplete="off">'+
+      '<button type="button" class="picker-close" data-focus-close aria-label="Close picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div>'+
+      '<div class="picker-results" id="'+prefix+'PickerResults"></div></div></details>';
+  }
+  /* What a session dialog's picker says it holds. fallback is the session's
+     saved assignment, so a client, project or task deleted since still reads
+     as what it was, marked removed, and saving leaves it as it is. */
+  function sessionTargetLabel(value,fallback) {
+    var a=value ? focusTargetAssignment(value) : null;
+    if(a)return focusAssignmentPath(a);
+    if(value && fallback && focusTargetValue(fallback)===value)return focusAssignmentPath(fallback)+" (removed)";
+    return "No assignment · notes only";
   }
   function focusAssignmentLabel() {
     var a=state.focusRun ? state.focusRun.assignment : focusTargetAssignment($("focusTask").value);
     return a && focusAssignmentPath(a) || "Attach client, project or task";
   }
-  function focusPickerResults(query,route) {
-    var q=String(query || "").trim().toLowerCase(),current=state.focusRun ? focusTargetValue(state.focusRun.assignment) : $("focusTask").value;
+  /* opts.current overrides the live timer's assignment, and opts.all keeps
+     finished tasks; the session log dialogs use both (see below). */
+  function focusPickerResults(query,route,opts) {
+    opts=opts || {};
+    var q=String(query || "").trim().toLowerCase(),current=opts.current != null ? opts.current : state.focusRun ? focusTargetValue(state.focusRun.assignment) : $("focusTask").value;
     var out='',count=0,active=route && focusTargetAssignment(route);
     var arrow='<svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg>';
     function row(value,a,type,browse) {
@@ -4791,11 +4849,11 @@
        offered here — including under a search, where it would otherwise be the
        top hit for a name you have just ticked off. The one exception is the
        task currently attached to the run: dropping that mid-session would
-       blank the label on the clock. The session log dialogs are a separate
-       matter and still list everything, because logging time against work you
-       have since finished is the ordinary case there. */
+       blank the label on the clock. The session log dialogs pass opts.all
+       from the board's "Hide done tasks" box instead, with the same exception
+       for the task the session is already on. */
     state.tasks.forEach(function(t){var a=taskAssignment(t.id);
-      if(t.status==='Done' && current!=='t:'+t.id)return;
+      if(t.status==='Done' && !opts.all && current!=='t:'+t.id)return;
       if(q || (active ? route.slice(0,2)==='p:' ? a.projectId===active.projectId : a.clientId===active.clientId && !a.projectId : !a.clientId && !a.projectId))row('t:'+t.id,a,'Task'+(t.status==='Done'?' · done':''),false);});
     if(!count)out+='<p class="picker-empty">'+(q?'No matches. Try another name.':'Nothing here yet. You can still focus without an assignment.')+'</p>';
     return out+'<button type="button" class="picker-task picker-clear" data-focus-pick="">No assignment · notes only</button>';
@@ -4818,19 +4876,27 @@
     if(run)persistFocus();else renderFocus();
     return true;
   }
-  function bindFocusPicker(doc,prefix) {
+  /* opts, for a picker that is not driving the timer: current() gives the
+     selected value, pick(value) applies one and returns true, label() the
+     summary text, and all lists finished tasks too. */
+  function bindFocusPicker(doc,prefix,opts) {
+    opts=opts || {};
     var picker=doc.getElementById(prefix+"Picker"),search=doc.getElementById(prefix+"PickerSearch"),results=doc.getElementById(prefix+"PickerResults");
     var route="";
-    function refresh(){results.innerHTML=focusPickerResults(search.value,route);}
+    function refresh(){results.innerHTML=focusPickerResults(search.value,route,opts.current ? {current:opts.current(),all:opts.all} : null);}
     function close(){picker.open=false;var summary=picker.querySelector && picker.querySelector("summary");if(summary)summary.focus();}
-    picker.addEventListener("toggle",function(){if(picker.open){refresh();search.focus();}});
+    picker.addEventListener("toggle",function(){if(picker.open){refresh();search.focus();if(opts.onOpen)opts.onOpen(picker);}});
     search.addEventListener("input",refresh);
-    picker.addEventListener("keydown",function(ev){if(ev.key === "Escape"){ev.preventDefault();close();}});
+    // Escape closes the picker only, not a dialog it sits in; Enter in the
+    // search box must not submit that dialog's form.
+    picker.addEventListener("keydown",function(ev){if(ev.key === "Escape" && picker.open){ev.preventDefault();ev.stopPropagation();close();}});
+    search.addEventListener("keydown",function(ev){if(ev.key === "Enter")ev.preventDefault();});
     picker.addEventListener("click",function(ev){if(ev.target.closest("[data-focus-close]"))close();});
     results.addEventListener("click",function(ev){var browse=ev.target.closest("[data-focus-browse]");
       if(browse){route=browse.getAttribute("data-focus-browse") || "";search.value="";refresh();search.focus();return;}
       var button=ev.target.closest("[data-focus-pick]");if(!button)return;
-      if(updateFocusDetail("target",button.getAttribute("data-focus-pick"))){close();doc.getElementById(prefix+"PickerLabel").textContent=focusAssignmentLabel();}
+      var value=button.getAttribute("data-focus-pick");
+      if(opts.pick ? opts.pick(value) : updateFocusDetail("target",value)){close();var label=doc.getElementById(prefix+"PickerLabel");label.textContent=opts.label ? opts.label() : focusAssignmentLabel();label.title=label.textContent;}
     });
     refresh();
   }
@@ -5162,8 +5228,10 @@
     var start=new Date(now == null ? Date.now() : now); start.setHours(0,0,0,0); start.setDate(start.getDate()-((start.getDay()+6)%7)+(offset || 0)*7);
     var end=new Date(start); end.setDate(end.getDate()+7); return {start:start.getTime(),end:end.getTime()};
   }
+  /* Newest first. Sessions added by hand all start at noon on their day, so
+     a tie goes to the one logged last, not the order they happened to sit in. */
   function sessionsInRange(range) {
-    return (state.focusSessions || []).map(function (s) { return {session:s,ms:s.intervals.reduce(function (sum,x) {return sum+Math.max(0,Math.min(x.end,range.end)-Math.max(x.start,range.start));},0)}; }).filter(function (x) {return x.ms>0;}).sort(function (a,b) {return b.session.startedAt.localeCompare(a.session.startedAt);});
+    return (state.focusSessions || []).map(function (s,i) { return {session:s,at:i,ms:s.intervals.reduce(function (sum,x) {return sum+Math.max(0,Math.min(x.end,range.end)-Math.max(x.start,range.start));},0)}; }).filter(function (x) {return x.ms>0;}).sort(function (a,b) {return b.session.startedAt.localeCompare(a.session.startedAt) || b.at-a.at;});
   }
   function focusLogExport(format, range) {
     var rows=sessionsInRange(range),week=isoDate(range.start),zone=Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
@@ -5292,7 +5360,7 @@
       {key:"minutes",label:"Time focused",type:"duration",required:true,value:30,
         requiredMsg:"Enter how long you focused.",
         help:"Click the number to type a length. Focused time only, the same as the timer records: leave out breaks and pauses."},
-      {key:"target",label:"Client, project or task",type:"select",options:focusTaskOptions(focusAssignment(null))},
+      {key:"target",label:"Client, project or task",type:"target",value:"",showDone:!filters.hideDone,labelFor:function(v){return sessionTargetLabel(v);}},
       {key:"note",label:"What did you work on?",type:"textarea",placeholder:"Goes straight into your weekly log"}
     ],onSubmit:function (v) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date)) { toast("Enter the date as YYYY-MM-DD."); return; }
@@ -5332,9 +5400,9 @@
         value:Math.round(session.durationMs/60000),
         requiredMsg:"A session needs a length.",
         help:"Measured by the timer unless you change it. Editing replaces the measurement."},
-      {key:"target",label:"Client, project or task",type:"select",options:focusTaskOptions(session.assignment)},
+      {key:"target",label:"Client, project or task",type:"target",value:focusTargetValue(session.assignment),showDone:!filters.hideDone,labelFor:function(v){return sessionTargetLabel(v,session.assignment);}},
       {key:"note",label:"What did you work on?",type:"textarea",value:session.note}
-    ],onSubmit:function(v) {
+    ],extra:{label:"Delete",run:function(){deleteFocusSession(id);}},onSubmit:function(v) {
       var current=byId(state.focusSessions,id); if (!current) {toast("That session is no longer available.");return;}
       var target=v.target == null ? (v.taskId ? "t:"+v.taskId : "") : v.target;
       if(target !== focusTargetValue(current.assignment)){var next=focusTargetAssignment(target);if(!next){toast("That assignment is no longer available. Reopen details and choose another.");return;}current.assignment=next;}
@@ -5354,6 +5422,27 @@
       if(retimed)said.push("set to "+focusDuration(current.durationMs));
       toast(said.length ? "Session "+said.join(" and ")+"." : "Session details saved.");
     }});
+  }
+  /* Focus records sit outside the planner's Undo stack (persistFocus keeps
+     them out of it), so a deleted session gets its own Undo in the toast. */
+  function deleteFocusSession(id) {
+    var session=byId(state.focusSessions,id); if (!session) return;
+    var a=session.assignment,title=focusAssignmentTitle(a),when=isNaN(Date.parse(session.startedAt)) ? "" : fmtDate(isoDate(Date.parse(session.startedAt)));
+    openConfirm({title:"Delete this session?",
+      body:focusDuration(session.durationMs)+" on “"+title+"”"+(when ? ", "+when : "")+". It comes out of your daily log and weekly exports.",
+      confirmLabel:"Delete session",
+      onConfirm:function(){
+        var at=state.focusSessions.findIndex(function(s){return s.id===id;});
+        if(at<0){toast("That session is no longer available.");return;}
+        var removed=state.focusSessions[at];
+        state.focusSessions=state.focusSessions.filter(function(s){return s.id!==id;});
+        persistFocus();
+        toast("Session deleted.",{label:"Undo",run:function(){
+          if(byId(state.focusSessions,id))return;
+          var list=state.focusSessions.slice();list.splice(Math.min(at,list.length),0,removed);
+          state.focusSessions=list;persistFocus();toast("Session restored.");
+        }});
+      }});
   }
   async function copyFocusWeek() {
     var range=weekOfDay(focusDayOffset), rows=sessionsInRange(range);

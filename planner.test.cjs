@@ -405,7 +405,7 @@ test('a manual focus session is recorded like a timed one, on the right local da
  a.capture();a.addFocusSession();
  // fields come from the vm realm, so compare their shape as text
  assert.equal(Array.from(ctx.form.fields,f=>`${f.key}:${f.type||'text'}${f.required?'*':''}`).join(' '),
-  'date:date* minutes:duration* target:select note:textarea');
+  'date:date* minutes:duration* target:target note:textarea');
  ctx.form.onSubmit({date:'2026-09-17',minutes:'45',target:'t:t1',note:'Drafting'});
  const s=a.state().focusSessions[0];
  assert.equal(s.durationMs,45*60000);
@@ -977,4 +977,17 @@ test('the duration field reads hours and minutes back as one total',()=>{
  a.setState(oneSession(135,'2026-09-22T09:00:00'));
  a.editFocusSession('f1');
  assert.equal(field('minutes').value,135);                 // 2h15, split by the renderer
+});
+
+test('the day log lists the latest session first, including several added by hand',()=>{
+ const {a,ctx}=app();a.setState(fixture());a.capture();
+ // Added by hand, all on one day: each starts at noon, so only the order they
+ // were logged can tell them apart. The last one entered belongs on top.
+ ['first','second','third'].forEach(note=>{a.addFocusSession();ctx.form.onSubmit({date:'2026-09-15',minutes:'30',target:'',note});});
+ const day=a.dayBounds(0,new Date(2026,8,15,12).getTime());
+ assert.equal(a.sessionsInRange(day).map(r=>r.session.note).join(),'third,second,first');
+ // a later start still wins over the order they were logged
+ const late=new Date(2026,8,15,17).getTime();
+ a.state().focusSessions.unshift({id:'late',runId:'',assignment:{},note:'evening',intervals:[{start:late,end:late+60000}],durationMs:60000,startedAt:new Date(late).toISOString(),endedAt:new Date(late+60000).toISOString(),outcome:'completed'});
+ assert.equal(a.sessionsInRange(day).map(r=>r.session.note).join(),'evening,third,second,first');
 });

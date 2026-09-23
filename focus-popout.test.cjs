@@ -28,9 +28,9 @@ function surface() {
 function app() {
   let code=fs.readFileSync('project-planner-1.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1];
   code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
-    render=()=>{};toast=()=>{};
-    globalThis.api={openFocusPopout,focusStart,focusPause,focusFinish,focusSkipBreak,focusTick,renderFocus,initFocus,serialize,focusPickerResults,updateFocusDetail,focusTargetAssignment,focusTargetValue,focusTaskOptions,focusLogExport,editFocusSession,
-      captureForm:()=>{openForm=x=>globalThis.form=x;},pending:x=>pendingRemote=x,
+    render=()=>{};toast=(m,a)=>{globalThis.lastToast={m,a};};
+    globalThis.api={openFocusPopout,focusStart,focusPause,focusFinish,focusSkipBreak,focusTick,renderFocus,initFocus,serialize,focusPickerResults,updateFocusDetail,focusTargetAssignment,focusTargetValue,sessionTargetLabel,focusPickerMarkup,deleteFocusSession,focusLogExport,editFocusSession,
+      captureForm:()=>{openForm=x=>globalThis.form=x;},captureConfirm:()=>{openConfirm=x=>globalThis.confirmBox=x;},pending:x=>pendingRemote=x,
       state:()=>state,restore:x=>state=normalize(x),window:()=>focusWindow};
     mode='local';})();`;
   const main=surface(), data=new Map(); let now=new Date(2026,8,19,9).getTime();
@@ -190,7 +190,13 @@ test('a finished task is not offered as something to start focusing on',()=>{
  assert(x.a.focusPickerResults('','p:same').includes('data-focus-pick="t:finished"'));
  assert(x.a.focusPickerResults('Already handled').includes('data-focus-pick="t:finished"'));
  // the session log dialogs are separate, and still offer finished work
- assert(x.a.focusTaskOptions(x.a.focusTargetAssignment('t:finished')).includes('Already handled'));
+ x.element('focusTask').value='';
+ assert(!x.a.focusPickerResults('Already handled').includes('data-focus-pick="t:finished"'));
+ assert(x.a.focusPickerResults('Already handled','',{current:'',all:true}).includes('data-focus-pick="t:finished"'));
+ // the session dialogs follow the board's Hide done tasks box, keeping the
+ // session's own task either way
+ assert(x.a.focusPickerResults('Already handled','',{current:'',all:false}).indexOf('data-focus-pick="t:finished"')<0);
+ assert(x.a.focusPickerResults('Already handled','',{current:'t:finished',all:false}).includes('data-focus-pick="t:finished"'));
 });
 test('a picker row is not given a tooltip repeating what it already says',()=>{
  const x=app();x.a.restore(workFixture());
@@ -273,7 +279,7 @@ test('changing level during a break prepares the next block without rewriting pr
 test('editing a log preserves removed assignment snapshots and can reassign to another level',()=>{
  const x=app();x.a.restore(workFixture());x.a.updateFocusDetail('target','p:same');x.a.focusStart();x.advance(20000);x.a.focusFinish();
  const entry=x.a.state().focusSessions[0],id=entry.id;x.a.state().projects=[];
- assert(x.a.focusTaskOptions(entry.assignment).includes('(removed)'));x.a.captureForm();x.a.editFocusSession(id);
+ assert(x.a.sessionTargetLabel('p:same',entry.assignment).endsWith('(removed)'));x.a.captureForm();x.a.editFocusSession(id);
  x.ctx.form.onSubmit({target:'p:same',note:'Snapshot kept'});assert.equal(entry.assignment.projectName,'Project A');
  x.a.editFocusSession(id);x.ctx.form.onSubmit({target:'c:empty',note:'Client work'});assert.equal(entry.assignment.clientId,'empty');assert.equal(entry.assignment.projectId,'');assert.equal(entry.durationMs,20000);
  x.a.editFocusSession(id);x.ctx.form.onSubmit({target:'p:missing',note:'Invalid'});assert.equal(entry.note,'Client work');
@@ -282,7 +288,7 @@ test('picker browse and close actions are explicit and never change assignment',
  const x=app(),child=surface();x.a.restore(workFixture());x.ctx.documentPictureInPicture={requestWindow:async()=>child.win};await x.a.openFocusPopout(false);
  child.element('floatPickerResults').listeners.click({target:{closest:s=>s==='[data-focus-browse]'?{getAttribute:()=> 'c:empty'}:null}});
  assert(child.element('floatPickerResults').innerHTML.includes('data-focus-pick="p:empty"'));assert.equal(x.element('focusTask').value,'');
- child.element('floatPicker').listeners.keydown({key:'Escape',preventDefault(){}});assert.equal(child.element('floatPicker').open,false);
+ child.element('floatPicker').open=true;child.element('floatPicker').listeners.keydown({key:'Escape',preventDefault(){},stopPropagation(){}});assert.equal(child.element('floatPicker').open,false);
 });
 
 test('starting after a project move resolves current ownership while completed snapshots remain unchanged',()=>{
@@ -290,4 +296,36 @@ test('starting after a project move resolves current ownership while completed s
  x.a.state().projects[0].clientId='empty';x.a.focusStart();assert.equal(x.a.state().focusRun.assignment.clientId,'empty');
  x.advance(10000);x.a.focusFinish();x.a.state().projects[0].clientId='same';
  assert.equal(x.a.state().focusSessions[0].assignment.clientId,'empty');
+});
+
+test('session dialogs use the Focus page picker, and list finished work',()=>{
+ const x=app();x.a.restore(workFixture());x.a.updateFocusDetail('target','p:same');x.a.focusStart();x.advance(20000);x.a.focusFinish();
+ const id=x.a.state().focusSessions[0].id;x.a.captureForm();x.a.editFocusSession(id);
+ const field=x.ctx.form.fields.find(f=>f.key==='target');
+ // no native select: the same picker, holding the session's current value
+ assert.equal(field.type,'target');assert.equal(field.value,'p:same');
+ assert.equal(field.showDone,false,'done tasks hidden by default, like the board');
+ assert.equal(field.labelFor('p:same'),x.a.sessionTargetLabel('p:same'));
+ assert.equal(field.labelFor(''),'No assignment · notes only');
+ const markup=x.a.focusPickerMarkup('f_target','Label','lbl_f_target');
+ assert(markup.includes('class="task-picker"')&&markup.includes('id="f_targetPickerSearch"')&&markup.includes('aria-labelledby="lbl_f_target f_targetPickerLabel"'));
+});
+test('a logged session can be deleted from its details, and the toast brings it back',()=>{
+ const x=app();x.a.restore(workFixture());
+ x.a.focusStart();x.advance(20000);x.a.focusFinish();
+ const before=x.a.state().focusSessions.map(s=>s.id).join();
+ const id=x.a.state().focusSessions[0].id;
+ x.a.captureForm();x.a.captureConfirm();x.a.editFocusSession(id);
+ assert.equal(x.ctx.form.extra.label,'Delete');
+ x.ctx.form.extra.run();
+ assert.match(x.ctx.confirmBox.title,/Delete this session/);
+ assert.equal(x.a.state().focusSessions.length,1,'nothing goes before confirming');
+ x.ctx.confirmBox.onConfirm();
+ assert.equal(x.a.state().focusSessions.length,0);
+ // saved, not just hidden: the stored copy has lost it too
+ assert(![...x.data.values()].some(v=>String(v).includes(id)));
+ assert.equal(x.ctx.lastToast.a.label,'Undo');
+ x.ctx.lastToast.a.run();
+ assert.equal(x.a.state().focusSessions.map(s=>s.id).join(),before);
+ assert([...x.data.values()].some(v=>String(v).includes(id)));
 });
