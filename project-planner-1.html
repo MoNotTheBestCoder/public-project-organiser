@@ -306,6 +306,8 @@
     container-type: inline-size;
   }
   .row.project-row { padding: 13px 14px 10px; gap: 9px; }
+  /* Not a real project: its name reads as a label, not a title you set. */
+  .loose-card .row.project-row .name { color: var(--ink-2); }
   .row.project-row .name { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
   .row.project-row .grow { flex: 1 1 auto; min-width: 0; }
   .pfoot {
@@ -326,10 +328,6 @@
 
   .loose { padding: 12px 16px 4px; }
   .loose.nopad { padding: 12px 16px 12px; }
-  .loosehead { display: flex; align-items: center; gap: 10px; padding: 0 6px 2px; }
-  .looselabel { font-size: 13px; font-weight: 600; color: var(--ink-2); }
-  .loosehead .meta { font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .loosehead .ghost { margin-left: auto; }
   .client.unfiled { --hue: var(--ink-3); }
   .client.unfiled .name { color: var(--ink-2); }
 
@@ -1127,13 +1125,21 @@
   var TASK_PREVIEW = 4;                  // tasks shown per project before "show more"
   var openState = Object.create(null);   // session-only overrides of the defaults
 
-  /* Clients and the unassigned pile open by default; a project's task list
-     starts closed, so the board reads as a summary until you open one. */
+  /* Clients and the unassigned pile open by default; a project's task list,
+     and a client's "No project" card ("n:"), start closed, so the board reads
+     as a summary until you open one. */
   function isOpen(key) {
     if (key in openState) return openState[key];
-    return key.charAt(0) !== "p";
+    return key.charAt(0) !== "p" && key.charAt(0) !== "n";
   }
   function setOpen(key, on) { openState[key] = !!on; persistLayout(); }
+  /* Opens whatever holds a task, so one just added or moved is on screen:
+     its project, or its client's "No project" card, and the client. */
+  function revealTaskHome(task) {
+    if (task.projectId) setOpen("p:" + task.projectId, true);
+    else if (task.clientId) setOpen("n:" + task.clientId, true);
+    if (task.clientId) setOpen("c:" + task.clientId, true);
+  }
   var draft = null;                      // Quick Add review rows
   var modalOpen = false;
   var pendingRemote = null;              // remote change held while a modal is open
@@ -2229,19 +2235,28 @@
     var projects = state.projects.filter(function (p) { return p.clientId === client.id; });
     var loose = tasksDirectlyOnClient(client.id);
 
-    // Loose tasks sit in their own block, below any projects. A client never needs a project.
+    /* A client's tasks with no project get a card of their own, after its
+       projects and built like one: it collapses the same way (closed by
+       default, key "n:<client>"), shows the same progress bar and counts, and
+       takes dropped tasks, which land on the client with no project. It is
+       not a record, so it has no status, Edit, Delete or drag handle. */
     var looseBlock = "";
     if (loose.length) {
-      looseBlock = '<div class="loose">' +
-        '<div class="loosehead"><span class="looselabel">No project</span>' +
-        '<span class="meta">' + taskSummary(loose) + "</span>" +
-        '<button class="ghost" data-act="add-task" data-client="' + esc(client.id) + '">+ Task</button></div>' +
-        renderTasks(loose, "l:" + client.id, "") +
-        "</div>";
+      var nkey = "n:" + client.id, nClosed = !isOpen(nkey);
+      var nDone = loose.filter(function (t) { return t.status === "Done"; }).length;
+      var nPct = Math.round((nDone / loose.length) * 10) * 10;
+      looseBlock = '<article class="project loose-card" data-drop-target="c:' + esc(client.id) + '">' +
+        '<div class="row project-row"><span class="grow">' + disclosureTitle(nkey, "No project", nClosed) + "</span></div>" +
+        '<div class="prog" role="presentation"><span class="bar w' + nPct + '"></span></div>' +
+        '<div class="pfoot"><span class="meta">' + taskSummary(loose) + "</span>" +
+          '<div class="acts"><button class="ghost" data-act="add-task" data-client="' + esc(client.id) + '" aria-label="Add task with no project">+ Task</button></div>' +
+        "</div>" +
+        (nClosed ? "" : renderTasks(loose, "l:" + client.id, "")) +
+        "</article>";
     }
 
     if (!projects.length) {
-      return looseBlock +
+      return (looseBlock ? '<div class="projects">' + looseBlock + "</div>" : "") +
         '<div class="empty inline">' +
         (loose.length ? "No projects — tasks can stay here without one. " : "No projects yet. Tasks can sit straight under the client, or ") +
         '<button class="ghost" data-act="add-project" data-client="' + esc(client.id) + '">add a project</button>' +
@@ -2249,10 +2264,10 @@
         "</div>";
     }
 
-    // Projects first; the client's loose tasks follow under "No project".
+    // Projects first; the "No project" card follows them in the same grid.
     var out = '<div class="projects">';
     projects.forEach(function (p) { out += renderProjectCard(p); });
-    return out + "</div>" + looseBlock;
+    return out + looseBlock + "</div>";
   }
 
   /* One project card, wherever it sits. Unassigned renders these too, for a
@@ -3095,7 +3110,7 @@
         applyTarget(task, v.target);
         task.order = nextOrderFor(task.projectId, task.clientId);
         state.tasks.push(task);
-        if (task.projectId) setOpen("p:" + task.projectId, true);
+        revealTaskHome(task);
         commit();
         toast("Task added.");
       }
@@ -3663,7 +3678,7 @@
       applyTarget(task, r.target, newClientIds, newProjectIds);
       task.order = nextOrderFor(task.projectId, task.clientId);
       state.tasks.push(task);
-      if (task.projectId) setOpen("p:" + task.projectId, true);   // show what just landed
+      revealTaskHome(task);   // show what just landed
       made.task++;
     });
 
@@ -4099,7 +4114,7 @@
           });
         }
         selectedTasks.clear();
-        if (v.target.startsWith("p:")) { var p = byId(state.projects,v.target.slice(2)); setOpen("p:"+p.id,true); setOpen("c:"+p.clientId,true); }
+        if (landed.length) revealTaskHome(landed[0]);
         commit(); toast("Moved " + moved + " task" + (moved === 1 ? "" : "s") + ". Use Undo to reverse.");
       }});
   }
@@ -4223,8 +4238,7 @@
     if (!changed) { toast("Already in that position."); return false; }
 
     selectedTasks.clear();
-    if (over.projectId) { setOpen("p:" + over.projectId, true); setOpen("c:" + over.clientId, true); }
-    else if (over.clientId) setOpen("c:" + over.clientId, true);
+    revealTaskHome(over);
     commit();
     toast("Moved " + moving.length + " task" + (moving.length === 1 ? "" : "s") + ". Use Undo to reverse.");
     return true;
@@ -4301,7 +4315,11 @@
     selectedTasks.clear();
     if (target.indexOf("p:") === 0) {
       var project = byId(state.projects,target.slice(2)); setOpen(target,true); setOpen("c:"+project.clientId,true);
-    } else setOpen(target,true);
+    } else {
+      setOpen(target,true);
+      // Tasks dropped on a client land in its "No project" card; open that too.
+      if (payload.kind === "task" && target.indexOf("c:") === 0) setOpen("n:"+target.slice(2),true);
+    }
     commit();
     toast("Moved "+changed+" "+payload.kind+(changed === 1 ? "" : "s")+". Use Undo to reverse.");
     return true;

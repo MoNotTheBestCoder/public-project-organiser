@@ -244,3 +244,11 @@ test('drag event lifecycle applies a valid move and clears the active drag',()=>
   listeners.drop({target:{closest:()=>({getAttribute:()=> 'u:none'})},preventDefault(){}});
   assert.equal(a.state().tasks[0].projectId,'p2');assert.equal(a.undoCount(),1);
 });
+test('a task dropped on a client lands in its No project card, which opens to show it',()=>{
+  const {a}=app();const t=a.state().tasks[0];
+  assert(a.applyPlannerDrop(a.makePlannerDrag('task',t.id),'c:c2'));
+  const html=a.renderClient(a.state().clients.find(c=>c.id==='c2'));
+  const card=html.indexOf('loose-card" data-drop-target="c:c2"');
+  assert(card>=0,'the card is the drop target for the client');
+  assert(html.indexOf('data-id="'+t.id+'"',card)>card,'and it is open with the task inside');
+});

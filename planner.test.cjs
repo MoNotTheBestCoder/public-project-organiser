@@ -997,9 +997,16 @@ test('a client lists its projects first, then its tasks with no project',()=>{
  a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Proj'}],
   tasks:[{id:'t1',title:'in project',projectId:'p1',clientId:'c1'},{id:'t2',title:'loose one',clientId:'c1'}]});
  a.setOpenKey('c:c1');a.setOpenKey('p:p1');
- const html=a.renderClient(a.state().clients[0]);
- assert(html.indexOf('class="projects"')>=0&&html.indexOf('class="loose"')>html.indexOf('class="projects"'),'No project comes after the projects');
- assert(html.indexOf('loose one')>html.indexOf('in project'));
+ let html=a.renderClient(a.state().clients[0]);
+ // a card in the same grid, after the projects, taking dropped tasks for the client
+ const card=html.indexOf('class="project loose-card" data-drop-target="c:c1"');
+ assert(card>html.indexOf('data-project-id="p1"'),'No project comes after the projects');
+ assert(html.indexOf('</div>',card)>0&&html.lastIndexOf('class="projects"',card)>=0,'inside the projects grid');
+ // closed by default like a project, with its own twist, and not draggable
+ assert(html.includes('data-key="n:c1"')&&html.indexOf('loose one')<0,'starts closed');
+ assert(!/loose-card[^>]*draggable/.test(html));
+ a.setOpenKey('n:c1');html=a.renderClient(a.state().clients[0]);
+ assert(html.indexOf('loose one')>html.indexOf('in project'),'opens to show its tasks');
 });
 test('the steps chip shows a disclosure arrow that follows its state',()=>{
  const {a}=app();
