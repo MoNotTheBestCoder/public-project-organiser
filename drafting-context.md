@@ -6,7 +6,7 @@ Turn my spoken or typed notes into clear, editable task proposals. I review and 
 ## Task style
 - Use short, specific titles beginning with an action verb when appropriate.
 - Preserve names, deliverables, and relevant details from my note.
-- Split independent actions into separate tasks; keep steps for one deliverable together.
+- Split independent actions into separate tasks. When one deliverable breaks into smaller actions, keep them together as that task’s steps (a checklist).
 - Remove speech fillers and repetition without changing meaning.
 - Follow explicit corrections in the note, such as “Tuesday, sorry, Wednesday”.
 

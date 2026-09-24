@@ -1016,3 +1016,45 @@ test('the steps chip shows a disclosure arrow that follows its state',()=>{
  a.beginStep('t1');
  assert(a.stepsChip(t).includes('aria-expanded="true"'));
 });
+
+/* ---- drafting steps ---- */
+test('drafts carry steps: on a new task, and added to an existing one, editable before saving',()=>{
+ const {a,element}=app();a.setState(fixture());
+ a.state().tasks[0].steps=[{id:'old',text:'Already there',done:true}];
+ element('draftJson').value=JSON.stringify([
+  {action:'client',name:'Gamma'},
+  {action:'task',title:'Draft report',projectId:'p1',steps:['Outline',' ','Write','Review']},
+  {action:'steps',taskId:'t0',steps:['Chase Sam','Deconstruct his research']},
+  {action:'steps',taskId:'gone',steps:['Nowhere to go']}]);
+ a.loadChatDrafts();
+ const rows=a.getDraft();
+ // the unknown task is dropped, blank lines are too
+ assert.equal(rows.map(r=>r.kind).join(),'client,task,steps');
+ assert.equal(rows[1].stepsText,'Outline\nWrite\nReview');
+ // the review is editable: drop one step before saving
+ rows[1].stepsText='Outline\nWrite';
+ a.confirmDraft();
+ const made=a.state().tasks.find(t=>t.title==='Draft report');
+ assert.equal(made.steps.map(s=>s.text).join('|'),'Outline|Write');
+ assert(made.steps.every(s=>s.id&&s.done===false));
+ assert.equal(a.state().tasks[0].steps.map(s=>s.text).join('|'),'Already there|Chase Sam|Deconstruct his research');
+ // counted properly, new client included (it used to go uncounted)
+ assert.equal(a.lastToast(),'Added 1 client, 1 task, 2 steps to 1 existing task.');
+ const gamma=a.state().clients.find(c=>c.name==='Gamma');
+ assert.equal(JSON.stringify(a.serialize().clients.find(c=>c.id===gamma.id)).includes('"client"'),false,'no stray field on the record');
+});
+test('the drafting request explains steps and accepts only well-formed ones',()=>{
+ const {a,element}=app();a.setState(fixture());
+ const prompt=a.buildPrompt('draft the report: outline then write');
+ assert(prompt.includes('"steps":[')&&prompt.includes('"action":"steps","taskId"'));
+ assert(/Independent pieces of work are separate tasks, not steps/.test(prompt));
+ for(const bad of [{action:'task',title:'x',steps:'one'},{action:'task',title:'x',steps:[1]},{action:'steps',steps:['a']},{action:'steps',taskId:'t0'}]){
+  element('draftJson').value=JSON.stringify([bad]);a.loadChatDrafts();assert.equal(a.getDraft(),null,JSON.stringify(bad));
+ }
+});
+test('a Steps row with no steps left blocks saving',()=>{
+ const {a,element}=app();a.setState(fixture());
+ element('draftJson').value=JSON.stringify([{action:'steps',taskId:'t1',steps:['One']}]);a.loadChatDrafts();
+ a.getDraft()[0].stepsText='  \n ';a.confirmDraft();
+ assert.equal(a.state().tasks[1].steps.length,0);assert(a.getDraft(),'still under review');
+});

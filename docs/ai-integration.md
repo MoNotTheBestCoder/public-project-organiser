@@ -11,6 +11,8 @@ The portable HTML contains an isolated `AIModel` module, not a required external
 
 The brand lookup asks the model to recall a colour; it does not browse or verify the company's branding. The normal client palette assignment (`nextAccent` / `backfillAccents`) is deterministic local code and does not call AI. Changing light/dark mode does not call AI or rewrite client records. Custom client brand colours are separate from the app's interface palette.
 
+A draft may propose steps: a checklist on a new task, or a `steps` action that appends steps to an existing task by its exact id. That append is the only change to an existing record a draft can propose, and like every other proposal it is shown for review and saved only on approval.
+
 All other planner operations are local or persistence operations: task edits, deletes, moves, sorting, search, selections, undo, focus timing, logs, and exports must not call a model. Copy drafting request and Paste drafts are a manual handoff, with no automatic access to a ChatGPT conversation.
 
 ## Host services are not AI

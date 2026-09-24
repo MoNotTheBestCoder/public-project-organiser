@@ -44,6 +44,11 @@ button reads **Copy drafting request** and the manual path appears instead:
 3. Copy the returned JSON array into **Paste drafts**, then choose **Review drafts**.
 4. Edit or remove proposals and press **Save** to approve the remaining batch.
 
+A draft can also break a task into **steps**: a new task can arrive with its checklist, and a
+note about work you already have ("for the benchmarking task: chase the research, then
+deconstruct it") can propose steps for that existing task. Steps show in the review one per
+line, so you can edit, add or delete lines before saving.
+
 The manual path is a fallback, not the normal flow. There is no API key, no direct API
 request and no paid proxy anywhere in this file — by design. The page never reaches into a
 ChatGPT conversation on its own; step 2 is you, moving text. Which of the two you get is
