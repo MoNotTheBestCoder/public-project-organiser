@@ -574,9 +574,11 @@
   .notes-hint { color: var(--ink-3); font-size: 12px; }
   /* Steps: a checklist inside a task, never a second task list. One chip on
      the row when there are any, nothing at all when there are none. */
-  .chip.steps { flex: none; min-width: max-content; cursor: pointer; background: var(--panel-2); border-color: var(--line); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .chip.steps { flex: none; min-width: max-content; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; background: var(--panel-2); border-color: var(--line); color: var(--ink-2); font-variant-numeric: tabular-nums; }
   button.chip.steps:hover:not(:disabled) { border-color: var(--brand); color: var(--ink); background: var(--panel-2); }
   .chip.steps.all-done { background: var(--done-bg); border-color: var(--done-line); color: var(--done); }
+  .chip.steps .ui-chevron { margin-right: -2px; }
+  .chip.steps[aria-expanded="true"] .ui-chevron { transform: rotate(90deg); }
   button.chip.steps.all-done:hover:not(:disabled) { background: var(--done-bg); border-color: var(--done); color: var(--done); }
 
   .step-list { flex: 1 0 100%; margin: 2px 0 4px 34px; display: flex; flex-direction: column; gap: 1px; }
@@ -2118,9 +2120,12 @@
     if (!total) return "";
     var done = stepsDone(t);
     var open = stepsOpen(t.id);
+    /* The chevron is what says this chip opens and closes: without it the
+       count read as a label, and the steps looked stuck open. */
     return '<button type="button" class="chip steps' + (done === total ? " all-done" : "") + '"' +
       ' data-act="steps-toggle" data-id="' + esc(t.id) + '" aria-expanded="' + (open ? "true" : "false") + '"' +
-      ' title="' + (open ? "Hide" : "Show") + ' steps">' + done + " of " + total + " steps</button>";
+      ' title="' + (open ? "Hide" : "Show") + ' steps">' + done + " of " + total + " steps" +
+      '<svg class="ui-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg></button>';
   }
 
   function stepsBlock(t) {
@@ -2224,7 +2229,7 @@
     var projects = state.projects.filter(function (p) { return p.clientId === client.id; });
     var loose = tasksDirectlyOnClient(client.id);
 
-    // Loose tasks sit in their own block — a client never needs a project.
+    // Loose tasks sit in their own block, below any projects. A client never needs a project.
     var looseBlock = "";
     if (loose.length) {
       looseBlock = '<div class="loose">' +
@@ -2244,9 +2249,10 @@
         "</div>";
     }
 
-    var out = looseBlock + '<div class="projects">';
+    // Projects first; the client's loose tasks follow under "No project".
+    var out = '<div class="projects">';
     projects.forEach(function (p) { out += renderProjectCard(p); });
-    return out + "</div>";
+    return out + "</div>" + looseBlock;
   }
 
   /* One project card, wherever it sits. Unassigned renders these too, for a
@@ -4368,7 +4374,21 @@
     if (act === "undo" || act === "redo") { recoverChange(act === "redo"); return; }
     if (act === "inline-edit") { startInlineEdit(el.getAttribute("data-id"), el.getAttribute("data-field")); return; }
     if (act === "task-menu") { taskMenu(el.getAttribute("data-id"), el.closest("[data-task-id]")); return; }
-    if (act === "steps-toggle") { var stid = el.getAttribute("data-id"); openSteps(stid, !stepsOpen(stid)); render(); return; }
+    if (act === "steps-toggle") {
+      var stid = el.getAttribute("data-id"), showing = stepsOpen(stid) || stepInput === stid;
+      /* Closing wins over an open "add a step" box, which otherwise held the
+         list open. Anything half-typed there is kept as a step first. */
+      if (showing && stepInput === stid) {
+        stepInput = null;
+        var typing = document.querySelector && document.querySelector('.step-new[data-id="' + stid + '"]');
+        // Emptied before saving: the re-render blurs the box, and its own
+        // leave-to-save handler would otherwise add the same text again.
+        var typed = typing ? typing.value : "";
+        if (typing) typing.value = "";
+        if (typed.trim()) addStep(stid, typed);
+      }
+      openSteps(stid, !showing); render(); return;
+    }
     if (act === "step-add") { beginStep(el.getAttribute("data-id")); return; }
     if (act === "step-remove") { removeStep(el.getAttribute("data-id"), el.getAttribute("data-step")); return; }
     if (act === "step-edit") {
@@ -4512,6 +4532,15 @@
         return !String(d.kind === "task" ? d.title : d.name).trim();
       });
     }
+  });
+
+  /* Pressing a task's steps chip while its "add a step" box is open must
+     not blur that box first: the blur re-renders the row, the chip under the
+     pointer is replaced, and the click that should close the list is lost.
+     The chip's own handler saves anything typed. */
+  document.addEventListener("mousedown", function (ev) {
+    var chip = ev.target && ev.target.closest && ev.target.closest('[data-act="steps-toggle"]');
+    if (chip && stepInput === chip.getAttribute("data-id")) ev.preventDefault();
   });
 
   /* Leaving the field is the commit. render() removes the input, so

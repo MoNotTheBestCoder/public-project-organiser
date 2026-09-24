@@ -381,7 +381,7 @@ test('one helper phrases every task count, and an empty client keeps its own lab
  const meta=h=>[...h.matchAll(/<span class="meta">([^<]*)<\/span>/g)].map(m=>m[1]);
  // client counts everything beneath it, including tasks inside its projects
  assert.deepEqual(meta(a.renderClient(a.state().clients[0])),
-  ['2 open tasks · 1 of 3 done','1 open task · 0 of 1 done','1 open task · 1 of 2 done']);
+  ['2 open tasks · 1 of 3 done','1 open task · 1 of 2 done','1 open task · 0 of 1 done']);
  assert.deepEqual(meta(a.renderClient(a.state().clients[1])),['Empty']);
  assert.deepEqual(meta(a.renderUnassigned()),['1 open task · 0 of 1 done']);
 });
@@ -990,4 +990,22 @@ test('the day log lists the latest session first, including several added by han
  const late=new Date(2026,8,15,17).getTime();
  a.state().focusSessions.unshift({id:'late',runId:'',assignment:{},note:'evening',intervals:[{start:late,end:late+60000}],durationMs:60000,startedAt:new Date(late).toISOString(),endedAt:new Date(late+60000).toISOString(),outcome:'completed'});
  assert.equal(a.sessionsInRange(day).map(r=>r.session.note).join(),'evening,third,second,first');
+});
+
+test('a client lists its projects first, then its tasks with no project',()=>{
+ const {a}=app();
+ a.setState({clients:[{id:'c1',name:'Alpha'}],projects:[{id:'p1',clientId:'c1',name:'Proj'}],
+  tasks:[{id:'t1',title:'in project',projectId:'p1',clientId:'c1'},{id:'t2',title:'loose one',clientId:'c1'}]});
+ a.setOpenKey('c:c1');a.setOpenKey('p:p1');
+ const html=a.renderClient(a.state().clients[0]);
+ assert(html.indexOf('class="projects"')>=0&&html.indexOf('class="loose"')>html.indexOf('class="projects"'),'No project comes after the projects');
+ assert(html.indexOf('loose one')>html.indexOf('in project'));
+});
+test('the steps chip shows a disclosure arrow that follows its state',()=>{
+ const {a}=app();
+ a.setState({clients:[],projects:[],tasks:[{id:'t1',title:'x',steps:[{id:'s1',text:'one',done:false}]}]});
+ const t=a.state().tasks[0];
+ assert(a.stepsChip(t).includes('aria-expanded="false"')&&a.stepsChip(t).includes('ui-chevron'));
+ a.beginStep('t1');
+ assert(a.stepsChip(t).includes('aria-expanded="true"'));
 });
