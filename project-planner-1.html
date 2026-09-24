@@ -2897,7 +2897,7 @@
            input holding the "c:", "p:" or "t:" value. A native select here
            looked like nothing else in the planner and offered no search. */
         body += '<input type="hidden" id="f_' + esc(f.key) + '" value="' + esc(f.value || "") + '">' +
-          focusPickerMarkup("f_" + f.key, f.labelFor(f.value || ""), "lbl_f_" + esc(f.key));
+          focusPickerMarkup("f_" + f.key, f.labelFor(f.value || ""), "lbl_f_" + esc(f.key), f.searchLabel);
       } else if (f.type === "date") {
         body += '<input type="date" id="f_' + esc(f.key) + '" value="' + esc(f.value || "") + '">';
       } else if (f.type === "number") {
@@ -2941,7 +2941,7 @@
     opts.fields.forEach(function (f) {
       if (f.type !== "target") return;
       var input = $("f_" + f.key);
-      bindFocusPicker(document, "f_" + f.key, { all: !!f.showDone,
+      bindFocusPicker(document, "f_" + f.key, { all: !!f.showDone, placement: !!f.placement,
         current: function () { return input.value; },
         label: function () { return f.labelFor(input.value); },
         pick: function (value) {
@@ -3105,8 +3105,7 @@
       submitLabel: "Add task",
       fields: [
         { key: "title", label: "Task", required: true, placeholder: "e.g. Send revised scope" },
-        { key: "target", label: "Where it goes", type: "select", options: targetOptions(target || ""),
-          help: "Optional — a task can sit under a client, a project, or nothing yet." },
+        placementField(target || "", "Optional. A task can sit under a client, a project, or nothing yet."),
         { key: "dueDate", label: "Due date", type: "date" },
         { key: "note", label: "Waiting on", type: "textarea", placeholder: "What it's blocked on, if anything" },
         { key: "notes", label: "Notes", type: "textarea", placeholder: "Details, links, decisions, or reminders" }
@@ -3197,8 +3196,7 @@
         submitLabel: "Save",
         fields: [
           { key: "title", label: "Task", required: true, value: t.title },
-          { key: "target", label: "Where it goes", type: "select", options: targetOptions(targetValue(t)),
-            help: "A task can sit under a client, a project, or nothing yet." },
+          placementField(targetValue(t), "A task can sit under a client, a project, or nothing yet."),
           { key: "dueDate", label: "Due date", type: "date", value: t.dueDate },
           { key: "note", label: "Waiting on", type: "textarea", value: t.note },
           { key: "notes", label: "Notes", type: "textarea", value: t.notes || "" }
@@ -4178,7 +4176,7 @@
     if (!targets.length) return;
     var first = byId(state.tasks, targets[0]);
     openForm({title: targets.length === 1 ? "Move “" + first.title + "”" : "Move " + targets.length + " tasks", submitLabel:"Move tasks",
-      fields:[{key:"target",label:"Destination",type:"select",options:targetOptions(targets.length === 1 ? targetValue(first) : ""),help:"Choose a project, a client without a project, or leave unassigned."}],
+      fields:[Object.assign(placementField(targets.length === 1 ? targetValue(first) : "","Choose a project, a client without a project, or leave unassigned."),{label:"Destination"})],
       onSubmit:function (v) {
         if (v.target && !(v.target.startsWith("p:") ? byId(state.projects,v.target.slice(2)) : byId(state.clients,v.target.slice(2)))) { toast("That destination no longer exists."); return; }
         var moved = 0;
@@ -4930,16 +4928,26 @@
   function focusAssignmentTitle(a) {return a.taskTitle || a.projectName || a.clientName || "Unassigned focus";}
   /* The picker's shell, for pickers built at run time (the session dialogs).
      The Focus page and the mini window carry the same markup inline. */
-  function focusPickerMarkup(prefix,label,labelledBy) {
+  function focusPickerMarkup(prefix,label,labelledBy,placeholder) {
     var chevron=function(d){return '<svg class="ui-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+d+'"/></svg>';};
     return '<details class="task-picker" id="'+prefix+'Picker"><summary'+(labelledBy ? ' aria-labelledby="'+labelledBy+' '+prefix+'PickerLabel"' : '')+'><span id="'+prefix+'PickerLabel" title="'+esc(label)+'">'+esc(label)+'</span>'+chevron("m4 6 4 4 4-4")+'</summary>'+
-      '<div class="picker-panel"><div class="picker-searchbar"><input type="search" id="'+prefix+'PickerSearch" aria-label="Find client, project or task" placeholder="Search tasks, projects or clients…" autocomplete="off">'+
+      '<div class="picker-panel"><div class="picker-searchbar"><input type="search" id="'+prefix+'PickerSearch" aria-label="'+esc(placeholder || "Find client, project or task")+'" placeholder="'+esc(placeholder ? placeholder+"…" : "Search tasks, projects or clients…")+'" autocomplete="off">'+
       '<button type="button" class="picker-close" data-focus-close aria-label="Close picker"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div>'+
       '<div class="picker-results" id="'+prefix+'PickerResults"></div></div></details>';
   }
   /* What a session dialog's picker says it holds. fallback is the session's
      saved assignment, so a client, project or task deleted since still reads
      as what it was, marked removed, and saving leaves it as it is. */
+  /* The summary of a task-placement picker (Add task, Edit task). */
+  function placementLabel(value) {
+    var a=value ? focusTargetAssignment(value) : null;
+    if(!a || a.taskId)return "No client or project yet";
+    return a.projectId ? focusAssignmentPath(a) : a.clientName+" · no project";
+  }
+  function placementField(value,help) {
+    return { key:"target", label:"Where it goes", type:"target", placement:true, value:value || "",
+      searchLabel:"Search clients or projects", labelFor:placementLabel, help:help };
+  }
   function sessionTargetLabel(value,fallback) {
     var a=value ? focusTargetAssignment(value) : null;
     if(a)return focusAssignmentPath(a);
@@ -4951,7 +4959,9 @@
     return a && focusAssignmentPath(a) || "Attach client, project or task";
   }
   /* opts.current overrides the live timer's assignment, and opts.all keeps
-     finished tasks; the session log dialogs use both (see below). */
+     finished tasks; the session log dialogs use both (see below).
+     opts.placement is for choosing where a task goes: clients and projects
+     only, since a task never sits inside another task. */
   function focusPickerResults(query,route,opts) {
     opts=opts || {};
     var q=String(query || "").trim().toLowerCase(),current=opts.current != null ? opts.current : state.focusRun ? focusTargetValue(state.focusRun.assignment) : $("focusTask").value;
@@ -4981,10 +4991,10 @@
     else if(active) {
       var parent=route.slice(0,2)==="p:" && active.clientId ? 'c:'+active.clientId : '';
       out+='<div class="picker-location"><button type="button" class="picker-back" data-focus-browse="'+esc(parent)+'" aria-label="Back">'+arrow+'</button><span>'+esc(focusAssignmentPath(active))+'</span></div>';
-      row(route,active,route.slice(0,2)==="c:" ? "Client · general work" : "Project · general work",false);
+      row(route,active,opts.placement ? (route.slice(0,2)==="c:" ? "Client · no project" : "Project") : route.slice(0,2)==="c:" ? "Client · general work" : "Project · general work",false);
     }
-    if(q || !active)state.clients.forEach(function(c){row('c:'+c.id,focusTargetAssignment('c:'+c.id),'Client',true);});
-    state.projects.forEach(function(p){if(q || (active ? route.slice(0,2)==='c:' && p.clientId===active.clientId : !byId(state.clients,p.clientId)))row('p:'+p.id,focusTargetAssignment('p:'+p.id),'Project',true);});
+    if(q || !active)state.clients.forEach(function(c){row('c:'+c.id,focusTargetAssignment('c:'+c.id),opts.placement ? 'Client · no project' : 'Client',true);});
+    state.projects.forEach(function(p){if(q || (active ? route.slice(0,2)==='c:' && p.clientId===active.clientId : !byId(state.clients,p.clientId)))row('p:'+p.id,focusTargetAssignment('p:'+p.id),'Project',!opts.placement);});
     /* A finished task is not something to start focusing on, so it is not
        offered here — including under a search, where it would otherwise be the
        top hit for a name you have just ticked off. The one exception is the
@@ -4992,11 +5002,11 @@
        blank the label on the clock. The session log dialogs pass opts.all
        from the board's "Hide done tasks" box instead, with the same exception
        for the task the session is already on. */
-    state.tasks.forEach(function(t){var a=taskAssignment(t.id);
+    if(!opts.placement)state.tasks.forEach(function(t){var a=taskAssignment(t.id);
       if(t.status==='Done' && !opts.all && current!=='t:'+t.id)return;
       if(q || (active ? route.slice(0,2)==='p:' ? a.projectId===active.projectId : a.clientId===active.clientId && !a.projectId : !a.clientId && !a.projectId))row('t:'+t.id,a,'Task'+(t.status==='Done'?' · done':''),false);});
-    if(!count)out+='<p class="picker-empty">'+(q?'No matches. Try another name.':'Nothing here yet. You can still focus without an assignment.')+'</p>';
-    return out+'<button type="button" class="picker-task picker-clear" data-focus-pick="">No assignment · notes only</button>';
+    if(!count)out+='<p class="picker-empty">'+(q?'No matches. Try another name.':opts.placement ? 'No clients or projects yet.' : 'Nothing here yet. You can still focus without an assignment.')+'</p>';
+    return out+'<button type="button" class="picker-task picker-clear" data-focus-pick="">'+(opts.placement ? 'No client or project yet' : 'No assignment · notes only')+'</button>';
   }
   function updateFocusDetail(kind,value) {
     if(pendingRemote) {toast("Wait for the planner to finish syncing first.");return false;}
@@ -5023,7 +5033,7 @@
     opts=opts || {};
     var picker=doc.getElementById(prefix+"Picker"),search=doc.getElementById(prefix+"PickerSearch"),results=doc.getElementById(prefix+"PickerResults");
     var route="";
-    function refresh(){results.innerHTML=focusPickerResults(search.value,route,opts.current ? {current:opts.current(),all:opts.all} : null);}
+    function refresh(){results.innerHTML=focusPickerResults(search.value,route,opts.current ? {current:opts.current(),all:opts.all,placement:opts.placement} : null);}
     function close(){picker.open=false;var summary=picker.querySelector && picker.querySelector("summary");if(summary)summary.focus();}
     picker.addEventListener("toggle",function(){if(picker.open){refresh();search.focus();if(opts.onOpen)opts.onOpen(picker);}});
     search.addEventListener("input",refresh);

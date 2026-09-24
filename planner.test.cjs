@@ -8,7 +8,7 @@ function app(original=false){
  code=code.slice(0,code.indexOf('  /* ------------------------------ start'))+`
  globalThis.api={normalize,toDraftRows,deleteItem,editItem,addTask,confirmDraft,renderTasks,buildPrompt,initSample,quickAddDraft,loadChatDrafts,saveContext,initContext,
  state:()=>state,setState:x=>{state=normalize(x);${original?'':'historyBaseline=JSON.stringify(serialize());undoStack=[];redoStack=[];'}},setDraft:x=>draft=x,getDraft:()=>draft,setPending:x=>pendingRemote=normalize(x),pending:()=>pendingRemote,
- ${original?'':'addClient,addProject,unassignedProjects,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusReset,focusTick,parseDuration,durationStep,durationText,focusPlan,renderFocusPlan,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
+ ${original?'':'addClient,addProject,unassignedProjects,focusPickerResults,placementLabel,setSessionMinutes,renderNav,navHTML:()=>$("clientNav").innerHTML,addStep,setStepDone,removeStep,renameStep,normalizeSteps,stepsDone,beginStep,stepsChip,stepsBlock,taskMenu,taskHomeChip,syncCaptureForSearch,importBackup,describeDoc,migrate,carryUnknown,withUnknown,SCHEMA:()=>SCHEMA_VERSION,matchingTasks,moveTasks,deleteSelectedTasks,recoverChange,commit,serialize,focusStart,focusPause,focusFinish,focusReset,focusTick,parseDuration,durationStep,durationText,focusPlan,renderFocusPlan,focusRemaining,weekBounds,dayBounds,sessionsInRange,renderFocusLog,editFocusSession,addFocusSession,focusLogExport,taskSummary,renderClient,renderUnassigned,renderProjects,setStatus,startInlineEdit,commitInlineEdit,cancelInlineEdit,inline:()=>inlineEdit,setSearch:x=>searchQuery=x,setScope:x=>scope=x,select:ids=>selectedTasks=new Set(ids),setOpenKey:k=>openState[k]=true,'}
  setMode:()=>mode='local',setExpanded:key=>expanded[key]=true,setFilters:x=>filters=x,
  lastToast:()=>globalThis.lastToast,
  stubUI:()=>{render=()=>{};toast=m=>{globalThis.lastToast=m};lookupBrand=()=>{};${original?'':'renderFocus=()=>{};renderFocusClock=()=>{};'}},
@@ -536,7 +536,10 @@ test('a project whose client is missing is kept and filed under Unassigned',()=>
  assert(!a.renderClient(a.state().clients[0]).includes('Q4 Restructure'));
  // and it is a destination a task can be filed into
  a.editItem('task','t2');
- assert(ctx.form.fields.find(f=>f.key==='target').options.includes('Q4 Restructure'));
+ const field=ctx.form.fields.find(f=>f.key==='target');
+ assert.equal(field.type,'target');assert(field.placement);
+ assert(a.focusPickerResults('','',{current:'',placement:true}).includes('data-focus-pick="p:p2"'));
+ assert.equal(field.labelFor('p:p2'),'Q4 Restructure');
 });
 test('the drafting request carries relevant open tasks, not the whole planner',()=>{
  const {a}=app();
@@ -1057,4 +1060,22 @@ test('a Steps row with no steps left blocks saving',()=>{
  element('draftJson').value=JSON.stringify([{action:'steps',taskId:'t1',steps:['One']}]);a.loadChatDrafts();
  a.getDraft()[0].stepsText='  \n ';a.confirmDraft();
  assert.equal(a.state().tasks[1].steps.length,0);assert(a.getDraft(),'still under review');
+});
+
+test('Add, Edit and Move task use the Focus menu, offering clients and projects only',()=>{
+ const {a,ctx}=app();a.setState(fixture());a.capture();
+ a.addTask('p:p1');
+ let field=ctx.form.fields.find(f=>f.key==='target');
+ assert.equal(field.type,'target');assert.equal(field.value,'p:p1');assert.equal(field.labelFor('p:p1'),'Alpha / Build');
+ assert.equal(field.labelFor('c:c2'),'Beta · no project');assert.equal(field.labelFor(''),'No client or project yet');
+ const top=a.focusPickerResults('','',{current:'',placement:true});
+ assert(top.includes('data-focus-pick="c:c1"')&&top.includes('Client · no project'));
+ assert(!top.includes('data-focus-pick="t:'),'tasks are not places a task can go');
+ const inside=a.focusPickerResults('','c:c1',{current:'',placement:true});
+ assert(inside.includes('data-focus-pick="p:p1"')&&!inside.includes('data-focus-browse="p:p1"'),'a project is picked, not browsed');
+ assert(!a.focusPickerResults('Task 1','',{current:'',placement:true}).includes('data-focus-pick="t:'));
+ assert(top.includes('>No client or project yet<'));
+ ctx.form.onSubmit({title:'Via menu',target:'c:c2',dueDate:'',note:'',notes:''});
+ assert.equal(a.state().tasks.at(-1).clientId,'c2');assert.equal(a.state().tasks.at(-1).projectId,'');
+ a.editItem('task','t0');field=ctx.form.fields.find(f=>f.key==='target');assert.equal(field.type,'target');assert.equal(field.value,'p:p1');
 });
